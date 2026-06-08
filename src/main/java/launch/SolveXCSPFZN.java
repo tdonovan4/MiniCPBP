@@ -49,7 +49,10 @@ public class SolveXCSPFZN {
 	};
 
 	public enum TreeSearchType {
-		DFS, LDS, DFSR
+		DFS,
+		LDS,
+		DFSR,
+		LV, // Belief-based Las-Vegas
 	}
 
 	private static Map<String, TreeSearchType> searchTypeMap = new HashMap<String, TreeSearchType>() {
@@ -58,6 +61,7 @@ public class SolveXCSPFZN {
 		{
 			put("dfs", TreeSearchType.DFS);
 			put("lds", TreeSearchType.LDS);
+			put("lv", TreeSearchType.LV);
 		}
 	};
 

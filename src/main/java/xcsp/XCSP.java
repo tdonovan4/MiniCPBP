@@ -2176,6 +2176,10 @@ public class XCSP implements XCallbacks2 {
 		case LDS:
 			search = makeLds(minicp, branching);
 			break;
+		case LV:
+			restart = true;
+			search = makeLv(minicp, mapVar.values().toArray(new IntVar[0]));
+			break;
 		default:
 			System.out.println("unknown search type");
 			System.exit(1);

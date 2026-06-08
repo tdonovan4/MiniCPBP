@@ -22,6 +22,7 @@ import minicpbp.engine.constraints.*;
 import minicpbp.engine.core.*;
 import minicpbp.search.DFSearch;
 import minicpbp.search.LDSearch;
+import minicpbp.search.LVSearch;
 import minicpbp.search.Objective;
 import minicpbp.state.Copier;
 import minicpbp.state.StateStack;
@@ -268,6 +269,10 @@ public final class Factory {
 
     public static LDSearch makeLds(Solver cp, Supplier<Procedure[]> branching) {
         return makeLds(cp, branching, true);
+    }
+
+    public static LVSearch makeLv(Solver cp, IntVar[] x) {
+        return new LVSearch(cp, x);
     }
 
     // -------------- views -----------------------
