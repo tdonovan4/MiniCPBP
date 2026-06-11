@@ -158,17 +158,20 @@ public class LVSearch extends Search{
             if (limit.test(statistics))
                 throw new StopSearchException();
 
-            solver.propagateSolver();
+            solver.fixPoint();
+            solver.vanillaBP(2);
             for (int i = 0; i < x.length; i++) {
-                Optional<IntVar> xsOpt = biasedWheelVariable();
+                IntVar xs = selectMin(x,
+                        xi -> xi.size() > 1,
+                        IntVar::entropy);
 
-                if (xsOpt.isPresent()) {
-                    IntVar xs = xsOpt.get();
+                if (xs != null) {
                     try {
                         statistics.incrNodes();
                         int v = xs.biasedWheelValue();
                         xs.assign(v);
-                        solver.propagateSolver();
+                        solver.fixPoint();
+                        solver.vanillaBP(2);
                     } catch (InconsistencyException e) {
                         statistics.incrFailures();
                         notifyFailure();
