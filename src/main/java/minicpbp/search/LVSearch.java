@@ -157,10 +157,8 @@ public class LVSearch extends Search{
         solver.getStateManager().withNewState(() -> {
             if (limit.test(statistics))
                 throw new StopSearchException();
-
-            solver.fixPoint();
-            solver.vanillaBP(2);
             for (int i = 0; i < x.length; i++) {
+
                 IntVar xs = selectMin(x,
                         xi -> xi.size() > 1,
                         IntVar::entropy);
@@ -171,7 +169,7 @@ public class LVSearch extends Search{
                         int v = xs.biasedWheelValue();
                         xs.assign(v);
                         solver.fixPoint();
-                        solver.vanillaBP(2);
+                        solver.vanillaBP(5);
                     } catch (InconsistencyException e) {
                         statistics.incrFailures();
                         notifyFailure();

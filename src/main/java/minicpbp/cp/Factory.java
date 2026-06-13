@@ -272,6 +272,7 @@ public final class Factory {
     }
 
     public static LVSearch makeLv(Solver cp, IntVar[] x) {
+        cp.propagateSolver();
         return new LVSearch(cp, x);
     }
 
