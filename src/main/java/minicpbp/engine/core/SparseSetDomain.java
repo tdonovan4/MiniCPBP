@@ -173,6 +173,12 @@ public class SparseSetDomain implements IntDomain {
                 max = marginal(v);
             }
         }
+
+        // Can happen when all marginals are zero
+        if (max == 0) {
+            return randomValue();
+        }
+
 	    // stochastic acceptance algorithm
 	    while (true) {
             int v = domainValues[rand.nextInt(s)];
