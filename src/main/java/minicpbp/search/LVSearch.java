@@ -121,6 +121,7 @@ public class LVSearch extends Search{
             }
 
             lastAssignation = assignation;
+            System.out.println("restart");
         }
         return statistics;
     }
@@ -177,12 +178,13 @@ public class LVSearch extends Search{
             if (limit.test(statistics))
                 throw new StopSearchException();
             for (int i = 0; i < x.length; i++) {
-
                 IntVar xs = minEntropyVar ? selectMin(x,
                         xi -> xi.size() > 1,
                         IntVar::entropy) : biasedWheelVariable();
 
                 if (xs != null) {
+                    System.out.println("selected variable entropy : " + xs.entropy());
+
                     try {
                         statistics.incrNodes();
                         int v = xs.biasedWheelValue();
