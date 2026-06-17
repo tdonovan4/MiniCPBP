@@ -18,12 +18,14 @@ package minicpbp.search;
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.Solver;
 import minicpbp.state.StateManager;
+import minicpbp.state.StateStack;
 import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
 
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import static minicpbp.cp.BranchingScheme.selectMin;
 
@@ -37,6 +39,9 @@ public class LVSearch extends Search{
 
     private final List<Procedure> solutionListeners = new LinkedList<>();
     private final List<Procedure> failureListeners = new LinkedList<>();
+
+    private Map<String, List<Integer>> lastAssignation;
+    private boolean minEntropyVar = true;
 
     public LVSearch(Solver solver, IntVar[] x) {
         this.solver = solver;
@@ -102,6 +107,20 @@ public class LVSearch extends Search{
             lasVegas(statistics, restartLimit);
             cutoff *= (int) restartFactor;
             cumulCutoff[0] += cutoff;
+
+            Map<String, List<Integer>> assignation = StreamSupport.stream(
+                    Spliterators.spliteratorUnknownSize(solver.getVariables().iterator(), Spliterator.ORDERED),
+                    false).collect(Collectors.toMap(IntVar::getName, (x) -> {
+                        int[] arr = new int[x.size()];
+                        x.fillArray(arr);
+                        return Arrays.stream(arr).boxed().collect(Collectors.toList());
+                    }));
+
+            if (lastAssignation != null && lastAssignation.equals(assignation)) {
+                minEntropyVar = false;
+            }
+
+            lastAssignation = assignation;
         }
         return statistics;
     }
@@ -159,9 +178,9 @@ public class LVSearch extends Search{
                 throw new StopSearchException();
             for (int i = 0; i < x.length; i++) {
 
-                IntVar xs = selectMin(x,
+                IntVar xs = minEntropyVar ? selectMin(x,
                         xi -> xi.size() > 1,
-                        IntVar::entropy);
+                        IntVar::entropy) : biasedWheelVariable();
 
                 if (xs != null) {
                     try {
@@ -169,7 +188,7 @@ public class LVSearch extends Search{
                         int v = xs.biasedWheelValue();
                         xs.assign(v);
                         solver.fixPoint();
-                        solver.vanillaBP(5);
+                        solver.beliefPropa();
                     } catch (InconsistencyException e) {
                         statistics.incrFailures();
                         notifyFailure();
@@ -184,7 +203,7 @@ public class LVSearch extends Search{
         });
     }
 
-    private Optional<IntVar> biasedWheelVariable() {
+    private IntVar biasedWheelVariable() {
         if (x.length == 0) {
             throw new NoSuchElementException();
         }
@@ -194,13 +213,13 @@ public class LVSearch extends Search{
         Optional<Double> max = candidates.stream().map(xi -> 1/xi.entropy()).max(Double::compareTo);
 
         if (!max.isPresent()) {
-            return Optional.empty();
+            return null;
         }
 
         while (true) {
             IntVar xi = candidates.get(rand.nextInt(candidates.size()));
             if (rand.nextDouble() < 1/(xi.entropy() * max.get()))
-                return Optional.of(xi);
+                return xi;
         }
     }
 }
