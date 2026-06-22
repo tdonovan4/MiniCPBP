@@ -108,13 +108,15 @@ public class LVSearch extends Search{
             cutoff *= (int) restartFactor;
             cumulCutoff[0] += cutoff;
 
-            Map<String, List<Integer>> assignation = StreamSupport.stream(
-                    Spliterators.spliteratorUnknownSize(solver.getVariables().iterator(), Spliterator.ORDERED),
-                    false).collect(Collectors.toMap(IntVar::getName, (x) -> {
+            Map<String, List<Integer>> assignation = StreamSupport.stream(Spliterators.spliteratorUnknownSize(solver.getVariables().iterator(), Spliterator.ORDERED), false)
+                .collect(Collectors.toMap((x) -> x.getName() != null ? x.getName() : "hashCode: " + System.identityHashCode(x),
+                    (x) -> {
                         int[] arr = new int[x.size()];
                         x.fillArray(arr);
                         return Arrays.stream(arr).boxed().collect(Collectors.toList());
-                    }));
+                    }
+                )
+            );
 
             if (lastAssignation != null && lastAssignation.equals(assignation)) {
                 minEntropyVar = false;
@@ -183,9 +185,8 @@ public class LVSearch extends Search{
                         IntVar::entropy) : biasedWheelVariable();
 
                 if (xs != null) {
-                    System.out.println("selected variable entropy : " + xs.entropy());
-
                     try {
+                        System.out.println("node: " + (i + 1));
                         statistics.incrNodes();
                         int v = xs.biasedWheelValue();
                         xs.assign(v);
