@@ -7,6 +7,8 @@ import minicpbp.engine.core.IntVar;
 
 public abstract class Search {
 
+	protected boolean traceSearch = false;
+
 	public abstract void onSolution(Procedure listener);
 
 	public abstract SearchStatistics solve(Predicate<SearchStatistics> limit);
@@ -18,4 +20,8 @@ public abstract class Search {
 	public abstract void initializeImpact(IntVar... x);
 
 	public abstract void initializeImpactDomains(IntVar... x);
+
+	public void setTraceSearchFlag(boolean traceSearch) {
+		this.traceSearch = traceSearch;
+	}
 }

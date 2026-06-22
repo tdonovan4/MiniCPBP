@@ -182,6 +182,9 @@ public class DFSearch extends Search{
             }
             cutoff *= restartFactor;
             cumulCutoff[0] += cutoff;
+            if (traceSearch) {
+                System.out.println("restart");
+            }
         }
         statistics.setCompleted();
         return statistics;
@@ -407,7 +410,6 @@ public class DFSearch extends Search{
         });
         return statistics;
     }
-
 
     private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
         if (limit.test(statistics))

@@ -2278,6 +2278,7 @@ public class XCSP implements XCallbacks2 {
 			System.out.println("unknown search strategy");
 			System.exit(1);
 		}
+		search.setTraceSearchFlag(traceSearch);
 
 		if (checkSolution || (solFileStr != ""))
 			extractSolutionStr = true;
