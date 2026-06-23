@@ -2095,6 +2095,12 @@ public class XCSP implements XCallbacks2 {
 		XCSP.traceEntropy = traceEntropy;
 	}
 
+	private static Double samplingRatio;
+
+	public void samplingRatio(Double samplingRatio) {
+		XCSP.samplingRatio = samplingRatio;
+	}
+
 	private static int maxIter = 5;
 
 	public void maxIter(int maxIter) {
@@ -2248,7 +2254,12 @@ public class XCSP implements XCallbacks2 {
 			search = makeSearch(minMarginal(vars));
 			break;
 		case MNE:
-			search = makeSearch(minEntropy(vars));
+			if (samplingRatio != null) {
+				IntVar[] sampledVars = minicp.sample(samplingRatio, vars);
+				search = makeSearch(minEntropy(sampledVars));
+			} else {
+				search = makeSearch(minEntropy(vars));
+			}
 			break;
 		case IE:
 			search = makeSearch(impactEntropy(vars));

@@ -127,6 +127,9 @@ public class SolveXCSPFZN {
 		Option traceEntropyOpt = Option.builder().longOpt("trace-entropy").hasArg(false).desc("trace the evolution of model's entropy after each BP iteration")
 				.build();
 
+		Option samplingOpt = Option.builder().longOpt("sample").argName("FRACTION").hasArg().desc("sample a fraction of the search space")
+				.build();
+
 		Options options = new Options();
 		options.addOption(xcspFileOpt);
 		options.addOption(branchingOpt);
@@ -148,6 +151,7 @@ public class SolveXCSPFZN {
 		options.addOption(dynamicStopBPOpt);
 		options.addOption(traceNbIterOpt);
 		options.addOption(traceEntropyOpt);
+		options.addOption(samplingOpt);
 
 		CommandLineParser parser = new DefaultParser();
 		CommandLine cmd = null;
@@ -206,6 +210,10 @@ public class SolveXCSPFZN {
 		if(cmd.hasOption("var-threshold"))
 			variationThreshold = Double.parseDouble(cmd.getOptionValue("var-threshold"));
 
+		Double samplingRatio = null;
+		if(cmd.hasOption("sample"))
+			samplingRatio = Double.parseDouble(cmd.getOptionValue("sample"));
+
 		boolean checkSolution = (cmd.hasOption("verify"));
 		boolean traceBP = (cmd.hasOption("trace-bp"));
 		boolean traceSearch = (cmd.hasOption("trace-search"));
@@ -256,6 +264,7 @@ public class SolveXCSPFZN {
 				xcsp.dynamicStopBP(dynamicStopBP);
 				xcsp.traceNbIter(traceNbIter);
 				xcsp.traceEntropy(traceEntropy);
+				xcsp.samplingRatio(samplingRatio);
 				xcsp.solve(heuristic, timeout, statsFileStr, solFileStr);
 			}
 		} catch (Exception e) {
