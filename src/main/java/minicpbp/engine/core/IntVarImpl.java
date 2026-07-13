@@ -18,6 +18,7 @@
 
 package minicpbp.engine.core;
 
+import minicpbp.state.StateBool;
 import minicpbp.state.StateStack;
 import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
@@ -45,7 +46,7 @@ public class IntVarImpl implements IntVar {
     private StateStack<Constraint> onBind;
     private StateStack<Constraint> onBounds;
     private StateStack<Constraint> constraints; //contains all constraints, allows us to get the failure count of all constraints applied to the variable
-    private boolean isForBranching = false;
+    private StateBool isForBranching;
 
     private DomainListener domListener = new DomainListener() {
         @Override
@@ -102,6 +103,7 @@ public class IntVarImpl implements IntVar {
         onBind = new StateStack<>(cp.getStateManager());
         onBounds = new StateStack<>(cp.getStateManager());
         constraints = new StateStack<>(cp.getStateManager());
+        isForBranching = cp.getStateManager().makeStateBool(false);
         cp.registerVar(this);
     }
 
@@ -365,12 +367,12 @@ public class IntVarImpl implements IntVar {
 
     @Override
     public void setForBranching(boolean b) {
-        this.isForBranching = b;
+        this.isForBranching.setValue(b);
     }
 
     @Override
     public boolean isForBranching() {
-        return this.isForBranching;
+        return this.isForBranching.value();
     }
 
     @Override

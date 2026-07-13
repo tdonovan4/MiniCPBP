@@ -27,6 +27,8 @@ import minicpbp.util.Procedure;
 import minicpbp.util.Belief;
 import minicpbp.util.exception.NotImplementedException;
 
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -598,6 +600,77 @@ public final class BranchingScheme {
                             branchNotEqual(xs, v);
                         });
             }
+        };
+    }
+
+    public static Supplier<Procedure[]> minEntropySampled(IntVar[] x) {
+        boolean tracing = x[0].getSolver().tracingSearch();
+        Belief beliefRep = x[0].getSolver().getBeliefRep();
+        final AtomicBoolean trace = new AtomicBoolean(false);
+
+        for (IntVar a : x) {
+            a.setForBranching(true);
+            a.whenDomainChange(() -> {
+                if (trace.get()) {
+                    System.out.println(a.getName());
+                }
+            });
+        }
+        if(x[0].getSolver().getWeighingScheme() == ConstraintWeighingScheme.ARITY)
+            x[0].getSolver().computeMinArity();
+
+        return () -> {
+            IntVar[] branchVars = Arrays.stream(x).filter(IntVar::isForBranching).toArray(IntVar[]::new);
+
+            IntVar xsCandidate = selectMin(branchVars,
+                    xi -> xi.size() > 1,
+                    IntVar::entropy);
+
+//            System.out.println("---: " + xsCandidate.entropy() / Math.log(xsCandidate.size()));
+
+            if (xsCandidate == null)
+                return EMPTY;
+
+            if (xsCandidate.entropy() / Math.log(xsCandidate.size()) > 0.9) {
+                double initialEntropy = xsCandidate.entropy() / Math.log(xsCandidate.size());
+                double initialDomain = Arrays.stream(x).map(v -> (double) v.size()).reduce(1.0, (a, b) -> a * b);
+
+                for(IntVar a: branchVars)
+                    a.setForBranching(false);
+
+                trace.set(true);
+                IntVar[] newX = x[0].getSolver().sampleEqOnly(3, branchVars);
+                x[0].getSolver().propagateSolver();
+                trace.set(false);
+                for(IntVar a: newX)
+                    a.setForBranching(true);
+
+                xsCandidate = selectMin(newX,
+                        xi -> xi.size() > 1,
+                        IntVar::entropy);
+
+                if (xsCandidate == null)
+                    return EMPTY;
+
+                System.out.println("Num vars " + newX.length + " delta domain size " + (Arrays.stream(x).map(v -> (double) v.size()).reduce(1.0, (a, b) -> a * b) - initialDomain));
+                System.out.println("Sampled: " + (xsCandidate.entropy() / Math.log(xsCandidate.size()) - initialEntropy));
+            }
+
+            IntVar xs = xsCandidate;
+            int v = xs.valueWithMaxMarginal();
+
+            return branch(
+                    () -> {
+                        if (tracing)
+                            System.out.println("### branching on " + xs.getName() + "=" + v + "; marginal=" + beliefRep.rep2std(xs.maxMarginal()) + "; entropy=" + xs.entropy());
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        if (tracing)
+                            System.out.println("### branching on " + xs.getName() + "!=" + v);
+                        branchNotEqual(xs, v);
+                    });
+
         };
     }
 

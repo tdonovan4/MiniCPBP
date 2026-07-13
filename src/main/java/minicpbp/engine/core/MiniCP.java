@@ -675,6 +675,51 @@ public class MiniCP implements Solver {
         }
     }
 
+    public IntVar[] sampleEqOnly(int nbEq, IntVar[] vars) {
+        final double initialAccuracy = 0.01; // relative error threshold of cell size wrt fraction
+        final double maxNumerator = 100.0; // beyond this, we relax the accuracy
+        // the prime numbers under 100
+        int primes[] = {5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97}; // don't use very small primes because it leaves very little room for rhs of inequalities
+        int i;
+        // find largest domain element
+        int maxDomElt = 0;
+        for(i=0; i<vars.length; i++) {
+            if (vars[i].max() > maxDomElt)
+                maxDomElt = vars[i].max();
+        }
+        // find the smallest prime at least as large as maxDomElt
+        for(i=0; i<primes.length; i++)
+            if (primes[i] >= maxDomElt) break;
+        if (i == primes.length) {
+            System.out.println("Domain values larger than currently recorded primes!");
+            System.exit(0);
+        }
+        int p = primes[i];
+        assert (p <= maxNumerator);
+
+        // set up the linear modular constraints
+        Constraint L = null;
+        IntVar[] paramVars;
+        if (nbEq>0) {
+            int[][] Ae = new int[nbEq][vars.length];
+            int[] be = new int[nbEq];
+            for (i=0; i<nbEq; i++) {
+                be[i] = rand.nextInt(p);
+                for (int j=0; j<Ae[i].length; j++) {
+                    Ae[i][j] = rand.nextInt(p);
+                }
+            }
+            L = Factory.linEqSystemModP(Ae,vars,be,p);
+            this.post(L);
+            paramVars = ((LinEqSystemModP) L).getParamVars(); // parametric variables of GJE solved form
+        }
+        else {
+            paramVars = vars;
+        }
+
+        return paramVars;
+    }
+
     @Override
     public IntVar[] sample(double fraction, IntVar[] vars) {
  	    final double initialAccuracy = 0.01; // relative error threshold of cell size wrt fraction

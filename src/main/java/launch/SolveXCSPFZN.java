@@ -24,6 +24,7 @@ public class SolveXCSPFZN {
 		MXM, // maximum marginal
 		MNM, // minimum marginal
 		MNE, //minimum entropy
+		MNES, //minimum entropy sampled
 		IE, //impact entropy
 		MIE, //min-entropy followed by impact entropy after first restart,
 		MNEBW, //min-entropy with biased wheel value selection
@@ -40,6 +41,7 @@ public class SolveXCSPFZN {
 			put("max-marginal", BranchingHeuristic.MXM);
 			put("min-marginal", BranchingHeuristic.MNM);
 			put("min-entropy", BranchingHeuristic.MNE);
+			put("min-entropy-sampled", BranchingHeuristic.MNES);
 			put("impact-entropy", BranchingHeuristic.IE);
 			put("impact-min-entropy", BranchingHeuristic.MIE);
 			put("min-entropy-biased", BranchingHeuristic.MNEBW);

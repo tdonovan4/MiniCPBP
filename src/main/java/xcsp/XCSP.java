@@ -2261,6 +2261,9 @@ public class XCSP implements XCallbacks2 {
 				search = makeSearch(minEntropy(vars));
 			}
 			break;
+		case MNES:
+			search = makeSearch(minEntropySampled(vars));
+			break;
 		case IE:
 			search = makeSearch(impactEntropy(vars));
 			if(XCSP.initImpact)

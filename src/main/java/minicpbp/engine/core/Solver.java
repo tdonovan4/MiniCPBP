@@ -269,6 +269,8 @@ public interface Solver {
      */
     IntVar[] sample(double fraction, IntVar[] vars);
 
+    IntVar[] sampleEqOnly(int nbEq, IntVar[] vars);
+
     /**
      * @return the minimal arity among all contraints
      */
