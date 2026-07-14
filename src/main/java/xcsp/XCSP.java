@@ -15,21 +15,20 @@
 
 package xcsp;
 
+import model.ModelFormatFrontend;
+import model.ModelGoal;
 import minicpbp.cp.Factory;
 import minicpbp.engine.core.BoolVar;
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.IntVarViewOffset;
-import minicpbp.engine.core.Solver;
 import minicpbp.engine.core.Solver.PropaMode;
 import minicpbp.search.LDSearch;
 import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
-import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
 import minicpbp.util.exception.NotImplementedException;
 
 import launch.SolveXCSPFZN.BranchingHeuristic;
-import launch.SolveXCSPFZN.TreeSearchType;
 
 import org.xcsp.common.structures.Transition;
 import org.xcsp.parser.callbacks.SolutionChecker;
@@ -39,6 +38,7 @@ import org.xcsp.common.Types;
 import org.xcsp.common.predicates.XNode;
 import org.xcsp.common.predicates.XNodeParent;
 import org.xcsp.parser.callbacks.XCallbacks2;
+import org.xcsp.parser.entries.XVariables;
 import org.xcsp.parser.entries.XVariables.XVarInteger;
 
 import java.io.ByteArrayInputStream;
@@ -51,14 +51,13 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static minicpbp.cp.BranchingScheme.*;
 import static minicpbp.cp.Factory.*;
 import static java.lang.reflect.Array.newInstance;
 
-public class XCSP implements XCallbacks2 {
+public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 
 	private Implem implem = new Implem(this);
 
@@ -69,12 +68,8 @@ public class XCSP implements XCallbacks2 {
 
 	private final Set<IntVar> decisionVars = new LinkedHashSet<>();
 
-	private final Solver minicp = makeSolver();
-
 	private Optional<IntVar> objectiveMinimize = Optional.empty();
 	private Optional<IntVar> realObjective = Optional.empty();
-
-	private boolean hasFailed;
 
 	@Override
 	public Implem implem() {
@@ -99,8 +94,110 @@ public class XCSP implements XCallbacks2 {
 		loadInstance(fileName);
 	}
 
-	public boolean isCOP() {
-		return objectiveMinimize.isPresent();
+	public void initModel() {
+		// Nothing to do
+	}
+
+	public String getSolutionStr() {
+		String solutionStr = null;
+		if (extractSolutionStr) {
+			StringBuilder sol = new StringBuilder("<instantiation>\n\t<list>\n\t\t");
+			for (XVariables.XVarInteger x : xVars)
+				sol.append(x.id()).append(" ");
+			sol.append("\n\t</list>\n\t<values>\n\t\t");
+			for (IntVar x : minicpVars) {
+				sol.append(x.min()).append(" ");
+			}
+			sol.append("\n\t</values>\n</instantiation>");
+			solutionStr = sol.toString();
+		}
+		if(competitionOutput) {
+			StringBuilder sol = new StringBuilder("v <instantiation>\nv <list> ");
+			for (XVariables.XVarInteger x : xVars)
+				sol.append(x.id()).append(" ");
+			sol.append("</list>\nv <values> ");
+			for (IntVar x : minicpVars) {
+				sol.append(x.min()).append(" ");
+			}
+			sol.append("</values>\nv </instantiation>");
+			solutionStr = sol.toString();
+		}
+		return solutionStr;
+	}
+
+	public IntVar[] getDecisionVars() {
+		/*
+		Stream<IntVar> nonDecisionVars = mapVar.entrySet().stream().sorted(new EntryComparator())
+				.map(Map.Entry::getValue).filter(v -> !decisionVars.contains(v));
+		IntVar[] vars = Stream.concat(decisionVars.stream(),
+		 nonDecisionVars).toArray(IntVar[]::new);
+		*/
+
+		/* */
+		// possibly too complicated for nothing...
+		IntVar[] vars = mapVar.entrySet().stream().map(Map.Entry::getValue).toArray(IntVar[]::new);
+		/* */
+
+		/*
+		// GP for branching, use all vars registered in solver, not only those appearing in the model
+		IntVar[] vars = new IntVar[minicp.getVariables().size()];
+		for (int i = 0; i < minicp.getVariables().size(); i++) {
+			vars[i] = minicp.getVariables().get(i);
+		}
+		*/
+		return vars;
+	}
+
+	public ModelGoal getGoal() {
+		if (objectiveMinimize.isPresent()) {
+			// We define all COPs as minimization problems.
+			// Maximisation problems are converted to minimization problems by inverting their objective.
+			return ModelGoal.MIN;
+		} else {
+			return ModelGoal.SAT;
+		}
+	}
+
+	public IntVar getObjectiveVar() {
+		return objectiveMinimize.orElse(null);
+	}
+
+	public void onSolutionFound(SearchStatistics stats, String solFileStr) {
+		if (!competitionOutput) {
+			System.out.println("solution found");
+		} else {
+			System.out.println("s SATISFIABLE");
+			System.out.println(solutionStr);
+			System.out.println("c "+stats.numberOfFailures()+" backtracks");
+		}
+	}
+
+	public void onNoSolutionFound(SearchStatistics stats) {
+		if (!competitionOutput) {
+			System.out.println("no solution was found");
+		} else {
+			System.out.println("s UNSATISFIABLE");
+			System.out.println("c "+stats.numberOfFailures()+" backtracks");
+		}
+	}
+
+	public void onInconclusiveSearch(SearchStatistics stats) {
+		if (!competitionOutput) {
+			System.out.println("no solution was found");
+		} else {
+			System.out.println("s UNKNOWN");
+		}
+	}
+
+	@Override
+	public void onPreInitFail() {
+		if (!competitionOutput) {
+			super.onPreInitFail();
+		} else {
+			System.out.println("s UNSATISFIABLE");
+			System.out.println("c problem failed before initiating the search");
+			throw InconsistencyException.INCONSISTENCY;
+		}
 	}
 
 	public List<String> getViolatedCtrs(String solution) throws Exception {
@@ -2010,7 +2107,7 @@ public class XCSP implements XCallbacks2 {
 			System.out.println("solfound " + (value == Integer.MAX_VALUE ? value : "solution"));
 			lastSolution.set(solution);
 		}, ss -> {
-			int nSols = isCOP() ? nSolution : 1;
+			int nSols = getGoal().isCOP() ? nSolution : 1;
 			return (System.currentTimeMillis() - t0 >= timeOut * 1000 || ss.numberOfSolutions() >= nSols);
 		});
 
@@ -2066,100 +2163,6 @@ public class XCSP implements XCallbacks2 {
 
 		return search.solve(shouldStop::apply);
 	}
-
-	private String solutionStr = null;
-	private boolean extractSolutionStr = false;
-	private boolean foundSolution = false;
-
-	private static boolean checkSolution = false;
-
-	public void checkSolution(boolean checkSolution) {
-		XCSP.checkSolution = checkSolution;
-	}
-
-	private static boolean traceBP = false;
-
-	public void traceBP(boolean traceBP) {
-		XCSP.traceBP = traceBP;
-	}
-
-	private static boolean traceSearch = false;
-
-	public void traceSearch(boolean traceSearch) {
-		XCSP.traceSearch = traceSearch;
-	}
-
-	private static boolean traceEntropy = false;
-
-	public void traceEntropy(boolean traceEntropy) {
-		XCSP.traceEntropy = traceEntropy;
-	}
-
-	private static int maxIter = 5;
-
-	public void maxIter(int maxIter) {
-		XCSP.maxIter = maxIter;
-	}
-
-	private static boolean damp = false;
-
-	public void damp(boolean damp) {
-		XCSP.damp = damp;
-	}
-
-	private static double dampingFactor = 0.5;
-
-	public void dampingFactor(double dampingFactor) {
-		XCSP.dampingFactor = dampingFactor;
-	}
-
-	private static boolean restart = false;
-	
-	public void restart(boolean restart) {
-		XCSP.restart = restart;
-	}
-
-	private static int nbFailCutof = 100;
-
-	public void nbFailCutof(int nbFailCutof) {
-		XCSP.nbFailCutof = nbFailCutof;
-	} 
-
-	private static double restartFactor = 1.5;
-
-	public void restartFactor(double restartFactor) {
-		XCSP.restartFactor = restartFactor;
-	}
-
-	private static double variationThreshold = -Double.MAX_VALUE;
-
-	public void variationThreshold(double variationThreshold) {
-		XCSP.variationThreshold = variationThreshold;
-	}
-
-	private static TreeSearchType searchType = TreeSearchType.DFS;
-
-	public void searchType(TreeSearchType searchType) {
-		XCSP.searchType = searchType;
-	}
-
-	private static boolean initImpact = false;
-
-	public void initImpact(boolean initImpact) {
-		XCSP.initImpact = initImpact;
-	}
-
-	private static boolean dynamicStopBP = false;
-
-	public void dynamicStopBP(boolean dynamicStopBP) {
-		XCSP.dynamicStopBP = dynamicStopBP;
-	}
-
-	private static boolean traceNbIter = false;
-
-	public void traceNbIter(boolean traceNbIter) {
-		XCSP.traceNbIter = traceNbIter;
-	}
 	
 	private static boolean competitionOutput = false;
 
@@ -2167,194 +2170,7 @@ public class XCSP implements XCallbacks2 {
 		XCSP.competitionOutput = competitionOutput;
 	}
 
-	private Search makeSearch(Supplier<Procedure[]> branching) {
-		Search search = null;
-		switch (searchType) {
-		case DFS:
-			search = makeDfs(minicp, branching);
-			break;
-		case LDS:
-			search = makeLds(minicp, branching);
-			break;
-		default:
-			System.out.println("unknown search type");
-			System.exit(1);
-		}
-		return search;
-	}
-
-	public void solve(BranchingHeuristic heuristic, int timeout, String statsFileStr, String solFileStr) {
-
-		// GP: this is the solve we use
-		Long t0 = System.currentTimeMillis();
-
-		minicp.setTraceBPFlag(traceBP);
-		minicp.setTraceSearchFlag(traceSearch);
-//		minicp.setTraceNbIterFlag(traceNbIter);
-		minicp.setTraceEntropyFlag(traceEntropy);
-		minicp.setMaxIter(maxIter);
-//		minicp.setDynamicStopBP(dynamicStopBP);
-//		minicp.setDamp(damp);
-//		minicp.setDampingFactor(dampingFactor);
-//		minicp.setVariationThreshold(variationThreshold);
-
-		if (hasFailed) {
-			if (!competitionOutput) {
-				System.out.println("problem failed before initiating the search");
-				throw InconsistencyException.INCONSISTENCY;
-			} else {
-				System.out.println("s UNSATISFIABLE");
-				System.out.println("c problem failed before initiating the search");
-				return;
-			}
-		}
-
-		/*
-		Stream<IntVar> nonDecisionVars = mapVar.entrySet().stream().sorted(new EntryComparator())
-				.map(Map.Entry::getValue).filter(v -> !decisionVars.contains(v));
-		IntVar[] vars = Stream.concat(decisionVars.stream(),
-		 nonDecisionVars).toArray(IntVar[]::new);
-		*/
-
-		/* */
-		// possibly too complicated for nothing...
-		IntVar[] vars = mapVar.entrySet().stream().map(Map.Entry::getValue).toArray(IntVar[]::new);
-		/* */
-
-		/*
-		// GP for branching, use all vars registered in solver, not only those appearing in the model
-		IntVar[] vars = new IntVar[minicp.getVariables().size()];
-		for (int i = 0; i < minicp.getVariables().size(); i++) {
-			vars[i] = minicp.getVariables().get(i);
-		}
-		*/
-
-		Search search = null;
-		switch (heuristic) {
-		case FFRV:
-			minicp.setMode(PropaMode.SP);
-			search = makeSearch(firstFailRandomVal(vars));
-			break;
-		case MXMS:
-			search = makeSearch(maxMarginalStrength(vars));
-			break;
-		case MXM:
-			search = makeSearch(maxMarginal(vars));
-			break;
-		case MNMS:
-			search = makeSearch(minMarginalStrength(vars));
-			break;
-		case MNM:
-			search = makeSearch(minMarginal(vars));
-			break;
-		case MNE:
-			search = makeSearch(minEntropy(vars));
-			break;
-		case IE:
-			search = makeSearch(impactEntropy(vars));
-			if(XCSP.initImpact)
-				search.initializeImpact(vars);
-			break;
-		case IBS:
-			minicp.setMode(PropaMode.SP);
-			search = makeSearch(impactBasedSearch(vars));
-			search.initializeImpactDomains(vars);
-			nbFailCutof = nbFailCutof*vars.length;
-			break;
-		case MIE:
-			search = makeDfs(minicp, minEntropyRegisterImpact(vars),impactEntropy(vars));
-			if(XCSP.initImpact)
-				search.initializeImpact(vars);
-			break;
-		case MNEBW:
-			search = makeSearch(minEntropyBiasedWheelSelectVal(vars));
-			break;
-		case WDEG:
-			minicp.setMode(PropaMode.SP);
-			search = makeSearch(domWdeg(vars));
-			nbFailCutof = nbFailCutof*vars.length;
-			break;
-		default:
-			System.out.println("unknown search strategy");
-			System.exit(1);
-		}
-
-		if (checkSolution || (solFileStr != ""))
-			extractSolutionStr = true;
-
-		search.onSolution(() -> {
-			foundSolution = true;
-			if (extractSolutionStr) {
-				StringBuilder sol = new StringBuilder("<instantiation>\n\t<list>\n\t\t");
-				for (XVarInteger x : xVars)
-					sol.append(x.id()).append(" ");
-				sol.append("\n\t</list>\n\t<values>\n\t\t");
-				for (IntVar x : minicpVars) {
-					sol.append(x.min()).append(" ");
-				}
-				sol.append("\n\t</values>\n</instantiation>");
-				solutionStr = sol.toString();
-			}
-			if(competitionOutput) {
-				StringBuilder sol = new StringBuilder("v <instantiation>\nv <list> ");
-				for (XVarInteger x : xVars)
-					sol.append(x.id()).append(" ");
-				sol.append("</list>\nv <values> ");
-				for (IntVar x : minicpVars) {
-					sol.append(x.min()).append(" ");
-				}
-				sol.append("</values>\nv </instantiation>");
-				solutionStr = sol.toString();
-			}
-			// GP: printing each solution
-//			System.out.println("SOLN:"+solutionStr);
-		});
-
-		SearchStatistics stats;
-		if(!restart) {
-			stats = search.solve(ss -> {
-				return (System.currentTimeMillis() - t0 >= timeout * 1000 || foundSolution);
-				// GP; print all solns
-//				return (System.currentTimeMillis() - t0 >= timeout * 1000);
-			});
-		}
-		else {
-			stats = search.solveRestarts(ss -> {
-				return (System.currentTimeMillis() - t0 >= timeout * 1000 || foundSolution);
-			}, nbFailCutof, restartFactor);
-		}
-
-		if(!competitionOutput) {
-			if (foundSolution) {
-				if(competitionOutput) {}
-				System.out.println("solution found");
-				if (checkSolution)
-					verifySolution();
-				printSolution(solFileStr);
-			} else
-				System.out.println("no solution was found");
-
-			Long runtime = System.currentTimeMillis() - t0;
-			printStats(stats, statsFileStr, runtime);
-		}
-		else {
-			if(foundSolution) {
-				System.out.println("s SATISFIABLE");
-				System.out.println(solutionStr);
-				System.out.println("c "+stats.numberOfFailures()+" backtracks");
-			}
-			else if(stats.isCompleted()) {
-				System.out.println("s UNSATISFIABLE");
-				System.out.println("c "+stats.numberOfFailures()+" backtracks");
-			}
-			else {
-				System.out.println("s UNKNOWN");
-			}
-		}
-
-	}
-
-	private void verifySolution() {
+	public void verifySolution() {
 		System.out.println("verifying the solution (begin)");
 		try {
 			SolutionChecker checker = new SolutionChecker(false, fileName,
@@ -2370,8 +2186,8 @@ public class XCSP implements XCallbacks2 {
 		System.out.println("verifying the solution (end)");
 	}
 
-	private void printSolution(String solFileStr) {
-		if (solFileStr != "")
+	public void printSolution(String solFileStr) {
+		if (!Objects.equals(solFileStr, ""))
 			try {
 				PrintWriter out = new PrintWriter(new File(solFileStr));
 				out.print(solutionStr);
@@ -2383,11 +2199,14 @@ public class XCSP implements XCallbacks2 {
 			}
 	}
 
-	private void printStats(SearchStatistics stats, String statsFileStr, Long runtime) {
+	public void printStats(SearchStatistics stats, String statsFileStr, Long runtime) {
 		PrintStream out = null;
-		if (statsFileStr == "")
+		if (Objects.equals(statsFileStr, "")) {
+			if (competitionOutput) {
+				return;
+			}
 			out = System.out;
-		else
+		} else {
 			try {
 				out = new PrintStream(new File(statsFileStr));
 			} catch (FileNotFoundException e) {
@@ -2395,6 +2214,7 @@ public class XCSP implements XCallbacks2 {
 				System.out.println("unable to create file " + statsFileStr);
 				System.exit(1);
 			}
+		}
 
 		String statusStr;
 		if (foundSolution)
