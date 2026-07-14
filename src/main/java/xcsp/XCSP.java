@@ -15,6 +15,7 @@
 
 package xcsp;
 
+import minicpbp.engine.core.Solver;
 import model.ModelFormatFrontend;
 import model.ModelGoal;
 import minicpbp.cp.Factory;
@@ -64,7 +65,8 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		return implem;
 	}
 
-	public XCSP(String fileName) throws Exception {
+	public XCSP(Solver minicp, String fileName) throws Exception {
+		super(minicp);
 		this.fileName = fileName;
 		hasFailed = false;
 
@@ -86,7 +88,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		// Nothing to do
 	}
 
-	public String getSolutionStr() {
+	public String getSolutionStr(boolean extractSolutionStr) {
 		String solutionStr = null;
 		if (extractSolutionStr) {
 			StringBuilder sol = new StringBuilder("<instantiation>\n\t<list>\n\t\t");
@@ -150,7 +152,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		return objectiveMinimize.orElse(null);
 	}
 
-	public void onSolutionFound(SearchStatistics stats, String solFileStr) {
+	public void onSolutionFound(SearchStatistics stats, String solutionStr, String solFileStr) {
 		if (!competitionOutput) {
 			System.out.println("solution found");
 		} else {
@@ -2091,7 +2093,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		XCSP.competitionOutput = competitionOutput;
 	}
 
-	public void verifySolution() {
+	public void verifySolution(String solutionStr) {
 		System.out.println("verifying the solution (begin)");
 		try {
 			SolutionChecker checker = new SolutionChecker(false, fileName,
@@ -2105,19 +2107,6 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 			System.out.println("unable to verify the solution");
 		}
 		System.out.println("verifying the solution (end)");
-	}
-
-	public void printSolution(String solFileStr) {
-		if (!Objects.equals(solFileStr, ""))
-			try {
-				PrintWriter out = new PrintWriter(new File(solFileStr));
-				out.print(solutionStr);
-				out.close();
-			} catch (FileNotFoundException e) {
-				e.printStackTrace();
-				System.out.println("unable to create file " + solFileStr);
-				System.exit(1);
-			}
 	}
 
 	public void printStats(SearchStatistics stats, String statsFileStr, Long runtime) {
@@ -2138,7 +2127,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		}
 
 		String statusStr;
-		if (foundSolution)
+		if (stats.numberOfSolutions() > 0)
 			statusStr = "SAT";
 		else if (stats.isCompleted())
 			statusStr = "UNSAT";

@@ -1,5 +1,6 @@
 package fzn;
 
+import minicpbp.engine.core.Solver;
 import model.ModelFormatFrontend;
 import model.ModelGoal;
 import minicpbp.engine.core.IntVar;
@@ -17,7 +18,8 @@ public class FZN extends ModelFormatFrontend {
 	//Model containing all constraints, parameters, variables and functions of the problem
 	private final Model m;
 
-    public FZN(String filename) throws Exception {
+    public FZN(Solver minicp, String filename) throws Exception {
+		super(minicp);
         hasFailed = false;
 		//read the Flatzinc File
 		this.m = FZParser.readFlatZincModelFromFile(filename, false);
@@ -36,7 +38,7 @@ public class FZN extends ModelFormatFrontend {
 		m.buildModel();
 	}
 
-	public String getSolutionStr() {
+	public String getSolutionStr(boolean extractSolutionStr) {
 		String solutionStr = m.getSolutionOutput();
 		System.out.print(solutionStr);
 		return solutionStr;
@@ -61,7 +63,7 @@ public class FZN extends ModelFormatFrontend {
 		return m.getObjective();
 	}
 
-	public void onSolutionFound(SearchStatistics stats, String solFileStr) {
+	public void onSolutionFound(SearchStatistics stats, String solutionStr, String solFileStr) {
 		if(stats.isCompleted()) {
 			System.out.println("==========");
 		}
@@ -75,13 +77,9 @@ public class FZN extends ModelFormatFrontend {
 		System.out.println("=====UNKNOWN=====");
 	}
 
-	public void verifySolution() {
+	public void verifySolution(String solutionStr) {
 		// TODO: implement this
 		throw new NotImplementedException("solution verification not implemented");
-	}
-
-	public void printSolution(String solFileStr) {
-		// TODO: implement this, for now do nothing
 	}
 
 	/**
@@ -115,7 +113,7 @@ public class FZN extends ModelFormatFrontend {
 			}
 
 			String statusStr;
-			if (foundSolution)
+			if (stats.numberOfSolutions() > 0)
 				statusStr = "SAT";
 			else if (stats.isCompleted())
 				statusStr = "UNSAT";

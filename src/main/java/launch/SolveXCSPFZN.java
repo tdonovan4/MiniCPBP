@@ -1,10 +1,22 @@
 package launch;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import minicpbp.engine.core.IntVar;
+import minicpbp.engine.core.Solver;
+import minicpbp.search.Search;
+import minicpbp.search.SearchStatistics;
+import minicpbp.util.Procedure;
+import model.ModelFormatFrontend;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -15,6 +27,10 @@ import org.apache.commons.cli.ParseException;
 
 import xcsp.XCSP;
 import fzn.FZN;
+
+import static minicpbp.cp.BranchingScheme.*;
+import static minicpbp.cp.BranchingScheme.domWdeg;
+import static minicpbp.cp.Factory.*;
 
 public class SolveXCSPFZN {
     public enum BranchingHeuristic {
@@ -61,14 +77,184 @@ public class SolveXCSPFZN {
 		}
 	};
 
-	public static void main(String[] args) {
+	private Solver minicp = makeSolver();
 
+	// Tracing flags
+	private boolean traceBP = false;
+	private boolean traceSearch = false;
+	private boolean traceEntropy = false;
+
+	// Required params
+	private String inputStr;
+	private BranchingHeuristic heuristic;
+	private int timeout;
+
+	// Optional Params
+	private TreeSearchType searchType = TreeSearchType.DFS;
+	private boolean checkSolution = false;
+	private String statsFileStr = "";
+	private String solFileStr = "";
+	private int maxIter = 10;
+	private boolean restart = false;
+	private int nbFailCutof = 100;
+	private double restartFactor = 1.5;
+	private boolean initImpact = false;
+
+	// TODO: unused fields, figure out if we want to keep them
+	private boolean damp = false;
+	private double dampingFactor = 0.5;
+	private boolean traceNbIter = false;
+	private double variationThreshold = -Double.MAX_VALUE;
+	private boolean dynamicStopBP = false;
+
+
+	public void solve(ModelFormatFrontend frontend) {
+		long t0 = System.currentTimeMillis();
+
+		minicp.setTraceBPFlag(traceBP);
+		minicp.setTraceSearchFlag(traceSearch);
+		minicp.setTraceEntropyFlag(traceEntropy);
+		minicp.setMaxIter(maxIter);
+		// TODO: check if these should be commented out or removed
+//		minicp.setDamp(damp);
+//		minicp.setDampingFactor(dampingFactor);
+//		minicp.setDynamicStopBP(dynamicStopBP);
+//      minicp.setTraceNbIterFlag(traceNbIter);
+//		minicp.setVariationThreshold(variationThreshold);
+
+		if (frontend.hasFailed()) {
+			frontend.onPreInitFail();
+		}
+		frontend.initModel();
+
+		IntVar[] decisionsVars = frontend.getDecisionVars();
+		Search search = null;
+		switch (heuristic) {
+			case FFRV:
+				minicp.setMode(Solver.PropaMode.SP);
+				search = makeSearch(firstFailRandomVal(decisionsVars));
+				break;
+			case MXMS:
+				search = makeSearch(maxMarginalStrength(decisionsVars));
+				break;
+			case MXM:
+				search = makeSearch(maxMarginal(decisionsVars));
+				break;
+			case MNMS:
+				search = makeSearch(minMarginalStrength(decisionsVars));
+				break;
+			case MNM:
+				search = makeSearch(minMarginal(decisionsVars));
+				break;
+			case MNE:
+				search = makeSearch(minEntropy(decisionsVars));
+				break;
+			case IE:
+				search = makeSearch(impactEntropy(decisionsVars));
+				if (initImpact)
+					search.initializeImpact(decisionsVars);
+				break;
+			case IBS:
+				minicp.setMode(Solver.PropaMode.SP);
+				search = makeSearch(impactBasedSearch(decisionsVars));
+				// Optional initialisation of impacts
+				search.initializeImpactDomains(decisionsVars);
+				nbFailCutof = nbFailCutof * decisionsVars.length;
+				break;
+			case MIE:
+				search = makeDfs(minicp, minEntropyRegisterImpact(decisionsVars), impactEntropy(decisionsVars));
+				if (initImpact)
+					search.initializeImpact(decisionsVars);
+				break;
+			case MNEBW:
+				search = makeSearch(minEntropyBiasedWheelSelectVal(decisionsVars));
+				break;
+			case WDEG:
+				minicp.setMode(Solver.PropaMode.SP);
+				search = makeSearch(domWdeg(decisionsVars));
+				nbFailCutof = nbFailCutof * decisionsVars.length;
+				break;
+			default:
+				System.out.println("unknown search strategy");
+				System.exit(1);
+		}
+
+		boolean extractSolutionStr = checkSolution || (!Objects.equals(solFileStr, ""));
+		AtomicBoolean foundSolution = new AtomicBoolean(false);
+		AtomicReference<String> solutionStr = new AtomicReference<>();
+		search.onSolution(() -> {
+			foundSolution.set(true);
+			solutionStr.set(frontend.getSolutionStr(extractSolutionStr));
+		});
+
+		SearchStatistics stats;
+		switch (frontend.getGoal()) {
+			//find a solution that maximize the cost function
+			case MAX:
+				stats = search.optimize(minicp.maximize(frontend.getObjectiveVar()),
+						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+				break;
+			//find a solution that minimize the cost function
+			case MIN:
+				stats = search.optimize(minicp.minimize(frontend.getObjectiveVar()),
+						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+				break;
+			default:
+				//find a solution that satisfies all constraints without restart
+				if(!restart) {
+					stats = search.solve(ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || foundSolution.get()));
+				}
+				//find a solution that satisfies all constraints with restarts during the search
+				else {
+					stats = search.solveRestarts(ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || foundSolution.get()), nbFailCutof, restartFactor);
+				}
+				break;
+		}
+		Long runtime = System.currentTimeMillis() - t0;
+
+		// Print result
+
+		if (foundSolution.get()) {
+			frontend.onSolutionFound(stats, solutionStr.get(), solFileStr);
+			if (checkSolution)
+				frontend.verifySolution(solutionStr.get());
+			printSolution(solFileStr);
+		} else if (stats.isCompleted()) {
+			frontend.onNoSolutionFound(stats);
+		} else {
+			frontend.onInconclusiveSearch(stats);
+		}
+		frontend.printStats(stats, statsFileStr, runtime);
+	}
+
+	public void solve() {
+		ModelFormatFrontend frontend;
+		try {
+			System.out.println(inputStr.substring(inputStr.lastIndexOf('.')+1));
+			if(inputStr.substring(inputStr.lastIndexOf('.')+1).equals("fzn")) {
+				FZN fzn = new FZN(minicp, inputStr);
+				fzn.printStats(true);
+				frontend = fzn;
+			}
+			else {
+				System.out.println("XCSP");
+				frontend = new XCSP(minicp, inputStr);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			return;
+		}
+
+		solve(frontend);
+	}
+
+	public void parseCli(String[] args) {
 		String quotedValidBranchings = branchingMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
 		String quotedValidSearchTypes = searchTypeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
-		
+
 		Option xcspFileOpt = Option.builder().longOpt("input").argName("FILE").required().hasArg()
 				.desc("input FZN or XCSP file").build();
 
@@ -77,7 +263,7 @@ public class SolveXCSPFZN {
 
 		Option searchOpt = Option.builder().longOpt("search-type").argName("SEARCH").required().hasArg()
 				.desc("search type.\nValid search types are:\n" + quotedValidSearchTypes).build();
-		
+
 		Option timeoutOpt = Option.builder().longOpt("timeout").argName("SECONDS").required().hasArg()
 				.desc("timeout in seconds").build();
 
@@ -110,10 +296,10 @@ public class SolveXCSPFZN {
 				.desc("number of failure before restart").build();
 
 		Option restartFactorOpt = Option.builder().longOpt("restart-factor").argName("restartFactor").hasArg()
-				.desc("factor to increase number of failure before restart").build();		
+				.desc("factor to increase number of failure before restart").build();
 
 		Option variationThresholdOpt = Option.builder().longOpt("var-threshold").argName("variationThreshold").hasArg()
-				.desc("threshold on entropy's variation under to stop belief propagation").build();	
+				.desc("threshold on entropy's variation under to stop belief propagation").build();
 
 		Option initImpactOpt = Option.builder().longOpt("init-impact").hasArg(false).desc("initialize impact before search")
 				.build();
@@ -161,107 +347,145 @@ public class SolveXCSPFZN {
 
 		String branchingStr = cmd.getOptionValue("branching");
 		checkBranchingOption(branchingStr);
-		BranchingHeuristic heuristic = branchingMap.get(branchingStr);
+		heuristic = branchingMap.get(branchingStr);
 
 		String searchTypeStr = cmd.getOptionValue("search-type");
 		checkSearchTypeOption(searchTypeStr);
-		TreeSearchType searchType = searchTypeMap.get(searchTypeStr);
+		searchType = searchTypeMap.get(searchTypeStr);
 
 
-		String inputStr = cmd.getOptionValue("input");
+		inputStr = cmd.getOptionValue("input");
 		checkInputOption(inputStr);
 
 		String timeoutStr = cmd.getOptionValue("timeout");
-		int timeout = checkTimeoutOption(timeoutStr);
+		timeout = checkTimeoutOption(timeoutStr);
 
-		String statsFileStr = "";
 		if (cmd.hasOption("stats")) {
 			statsFileStr = cmd.getOptionValue("stats");
 			checkCreateFile(statsFileStr);
 		}
 
-		String solFileStr = "";
 		if (cmd.hasOption("solution")) {
 			solFileStr = cmd.getOptionValue("solution");
 			checkCreateFile(solFileStr);
 		}
 
-		int maxIter = 10;
 		if (cmd.hasOption("max-iter"))
 			maxIter = Integer.parseInt(cmd.getOptionValue("max-iter"));
 
-		double dampingFactor = 0.5;
 		if (cmd.hasOption("damping-factor"))
 			dampingFactor = Double.parseDouble(cmd.getOptionValue("damping-factor"));
 
-		int nbFailCutof = 100;
 		if(cmd.hasOption("cutoff"))
 			nbFailCutof = Integer.parseInt(cmd.getOptionValue("cutoff"));
 
-		double restartFactor = 1.5;
 		if(cmd.hasOption("restart-factor"))
 			restartFactor = Double.parseDouble(cmd.getOptionValue("restart-factor"));
 
-		double variationThreshold = -Double.MAX_VALUE;
 		if(cmd.hasOption("var-threshold"))
 			variationThreshold = Double.parseDouble(cmd.getOptionValue("var-threshold"));
 
-		boolean checkSolution = (cmd.hasOption("verify"));
-		boolean traceBP = (cmd.hasOption("trace-bp"));
-		boolean traceSearch = (cmd.hasOption("trace-search"));
-		boolean damp = (cmd.hasOption("damp-messages"));
-		boolean restart = (cmd.hasOption("restart"));
-		boolean initImpact = (cmd.hasOption("init-impact"));
-		boolean dynamicStopBP = (cmd.hasOption("dynamic-stop"));
-		boolean traceNbIter = (cmd.hasOption("trace-iter"));
-		boolean traceEntropy = (cmd.hasOption("trace-entropy"));
+		checkSolution = (cmd.hasOption("verify"));
+		damp = (cmd.hasOption("damp-messages"));
+		restart = (cmd.hasOption("restart"));
+		initImpact = (cmd.hasOption("init-impact"));
+		dynamicStopBP = (cmd.hasOption("dynamic-stop"));
 
+		traceBP = (cmd.hasOption("trace-bp"));
+		traceSearch = (cmd.hasOption("trace-search"));
+		traceNbIter = (cmd.hasOption("trace-iter"));
+		traceEntropy = (cmd.hasOption("trace-entropy"));
+	}
 
-		try {
-			System.out.println(inputStr.substring(inputStr.lastIndexOf('.')+1));
-			if(inputStr.substring(inputStr.lastIndexOf('.')+1).equals("fzn")) {
-				FZN fzn = new FZN(inputStr);
-				fzn.searchType(searchType);
-				fzn.checkSolution(checkSolution);
-				fzn.traceBP(traceBP);
-				fzn.traceSearch(traceSearch);
-				fzn.maxIter(maxIter);
-				fzn.damp(damp);
-				fzn.dampingFactor(dampingFactor);
-				fzn.restart(restart);
-				fzn.nbFailCutof(nbFailCutof);
-				fzn.restartFactor(restartFactor);
-				fzn.variationThreshold(variationThreshold);
-				fzn.initImpact(initImpact);
-				fzn.dynamicStopBP(dynamicStopBP);
-				fzn.traceNbIter(traceNbIter);
-				fzn.printStats(true);
-				fzn.solve(heuristic, timeout, statsFileStr, solFileStr);
-			}
-			else {
-				System.out.println("XCSP");
-				XCSP xcsp = new XCSP(inputStr);
-				xcsp.searchType(searchType);
-				xcsp.checkSolution(checkSolution);
-				xcsp.traceBP(traceBP);
-				xcsp.traceSearch(traceSearch);
-				xcsp.maxIter(maxIter);
-				xcsp.damp(damp);
-				xcsp.dampingFactor(dampingFactor);
-				xcsp.restart(restart);
-				xcsp.nbFailCutof(nbFailCutof);
-				xcsp.restartFactor(restartFactor);
-				xcsp.variationThreshold(variationThreshold);
-				xcsp.initImpact(initImpact);
-				xcsp.dynamicStopBP(dynamicStopBP);
-				xcsp.traceNbIter(traceNbIter);
-				xcsp.traceEntropy(traceEntropy);
-				xcsp.solve(heuristic, timeout, statsFileStr, solFileStr);
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
+	public static void main(String[] args) {
+		SolveXCSPFZN app = new SolveXCSPFZN();
+		app.parseCli(args);
+		app.solve();
+	}
+
+	public Solver getSolver() {
+		return minicp;
+	}
+
+	public void setTraceBP(boolean traceBP) {
+		this.traceBP = traceBP;
+	}
+	public void setTraceSearch(boolean traceSearch) {
+		this.traceSearch = traceSearch;
+	}
+	public void setTraceEntropy(boolean traceEntropy) {
+		this.traceEntropy = traceEntropy;
+	}
+	public void setInputStr(String inputStr) {
+		this.inputStr = inputStr;
+	}
+	public void setHeuristic(BranchingHeuristic heuristic) {
+		this.heuristic = heuristic;
+	}
+	public void setTimeout(int timeout) {
+		this.timeout = timeout;
+	}
+	public void setSearchType(TreeSearchType searchType) {
+		this.searchType = searchType;
+	}
+	public void setCheckSolution(boolean checkSolution) {
+		this.checkSolution = checkSolution;
+	}
+	public void setStatsFileStr(String statsFileStr) {
+		this.statsFileStr = statsFileStr;
+	}
+	public void setSolFileStr(String solFileStr) {
+		this.solFileStr = solFileStr;
+	}
+	public void setMaxIter(int maxIter) {
+		this.maxIter = maxIter;
+	}
+	public void setRestart(boolean restart) {
+		this.restart = restart;
+	}
+	public void setNbFailCutof(int nbFailCutof) {
+		this.nbFailCutof = nbFailCutof;
+	}
+	public void setRestartFactor(double restartFactor) {
+		this.restartFactor = restartFactor;
+	}
+	public void setInitImpact(boolean initImpact) {
+		this.initImpact = initImpact;
+	}
+
+	/**
+	 * Creates a search (either DFS or LDS) with a given branching heuristic
+	 * @param branching a branching heuristic
+	 * @return a search object
+	 */
+	private Search makeSearch(Supplier<Procedure[]> branching) {
+		Search search = null;
+		switch (searchType) {
+			case DFS:
+				search = makeDfs(minicp, branching);
+				break;
+			case LDS:
+				search = makeLds(minicp, branching);
+				break;
+			default:
+				System.out.println("unknown search type");
+				System.exit(1);
 		}
+		return search;
+	}
 
+	private void printSolution(String solutionStr) {
+		if (!Objects.equals(solFileStr, "")) {
+			try {
+				PrintWriter out = new PrintWriter(new File(solFileStr));
+				out.print(solutionStr);
+				out.close();
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+				System.out.println("unable to create file " + solFileStr);
+				System.exit(1);
+			}
+		}
 	}
 
 	private static void checkBranchingOption(String branchingStr) {
