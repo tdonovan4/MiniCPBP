@@ -21,14 +21,9 @@ import minicpbp.cp.Factory;
 import minicpbp.engine.core.BoolVar;
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.IntVarViewOffset;
-import minicpbp.engine.core.Solver.PropaMode;
-import minicpbp.search.LDSearch;
-import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
 import minicpbp.util.exception.InconsistencyException;
 import minicpbp.util.exception.NotImplementedException;
-
-import launch.SolveXCSPFZN.BranchingHeuristic;
 
 import org.xcsp.common.structures.Transition;
 import org.xcsp.parser.callbacks.SolutionChecker;
@@ -48,28 +43,21 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.security.InvalidParameterException;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static minicpbp.cp.BranchingScheme.*;
 import static minicpbp.cp.Factory.*;
 import static java.lang.reflect.Array.newInstance;
 
 public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 
-	private Implem implem = new Implem(this);
+	private final Implem implem = new Implem(this);
 
-	private String fileName;
+	private final String fileName;
 	private final Map<XVarInteger, IntVar> mapVar = new HashMap<>();
 	private final List<XVarInteger> xVars = new LinkedList<>();
 	private final List<IntVar> minicpVars = new LinkedList<>();
 
-	private final Set<IntVar> decisionVars = new LinkedHashSet<>();
-
 	private Optional<IntVar> objectiveMinimize = Optional.empty();
-	private Optional<IntVar> realObjective = Optional.empty();
 
 	@Override
 	public Implem implem() {
@@ -1259,9 +1247,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 
 	private void setObj(IntVar obj, boolean minimization) {
 		IntVar minobj = minimization ? obj : minus(obj);
-
 		objectiveMinimize = Optional.of(minobj);
-		realObjective = Optional.of(obj);
 	}
 
 	@Override
@@ -2098,71 +2084,6 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 			return o1.getKey().id.compareTo(o2.getKey().id);
 		}
 	}
-
-	public String solve(int nSolution, int timeOut) {
-		AtomicReference<String> lastSolution = new AtomicReference<>("");
-		Long t0 = System.currentTimeMillis();
-
-		solve((solution, value) -> {
-			System.out.println("solfound " + (value == Integer.MAX_VALUE ? value : "solution"));
-			lastSolution.set(solution);
-		}, ss -> {
-			int nSols = getGoal().isCOP() ? nSolution : 1;
-			return (System.currentTimeMillis() - t0 >= timeOut * 1000 || ss.numberOfSolutions() >= nSols);
-		});
-
-		return lastSolution.get();
-	}
-
-	public void buildAnnotationDecision(XVarInteger[] list) {
-		decisionVars.clear();
-		Arrays.stream(list).map(mapVar::get).forEach(decisionVars::add);
-	}
-
-	/**
-	 * @param onSolution: void onSolution(solution, obj). If not a COP, obj =
-	 *        Integer.MAXVALUE
-	 * @param shouldStop: boolean shouldStop(stats, isCOP).
-	 * @return Stats
-	 */
-	public SearchStatistics solve(BiConsumer<String, Integer> onSolution,
-			Function<SearchStatistics, Boolean> shouldStop) {
-
-		IntVar[] vars = mapVar.entrySet().stream().sorted(new EntryComparator()).map(Map.Entry::getValue)
-				.toArray(IntVar[]::new);
-		LDSearch search;
-		// TODO change firstfail to maxMarginalStrength
-		if (decisionVars.isEmpty()) {
-			search = makeLds(minicp, firstFail(vars));
-		} else {
-			search = makeLds(minicp, and(firstFail(decisionVars.toArray(new IntVar[0])), firstFail(vars)));
-		}
-
-		if (objectiveMinimize.isPresent()) {
-			try {
-				minicp.minimize(objectiveMinimize.get());
-			} catch (InconsistencyException e) {
-				hasFailed = true;
-			}
-		}
-
-		if (hasFailed) {
-			throw InconsistencyException.INCONSISTENCY;
-		}
-
-		search.onSolution(() -> {
-			StringBuilder sol = new StringBuilder("<instantiation>\n\t<list>\n\t\t");
-			for (XVarInteger x : xVars)
-				sol.append(x.id()).append(" ");
-			sol.append("\n\t</list>\n\t<values>\n\t\t");
-			for (IntVar x : minicpVars)
-				sol.append(x.min()).append(" ");
-			sol.append("\n\t</values>\n</instantiation>");
-			onSolution.accept(sol.toString(), realObjective.map(IntVar::min).orElse(Integer.MAX_VALUE));
-		});
-
-		return search.solve(shouldStop::apply);
-	}
 	
 	private static boolean competitionOutput = false;
 
@@ -2231,16 +2152,5 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 
 		out.close();
 
-	}
-
-	public static void main(String[] args) {
-		try {
-			XCSP xcsp = new XCSP(args[0]);
-			String solution = xcsp.solve(Integer.MAX_VALUE, 100);
-			List<String> violatedCtrs = xcsp.getViolatedCtrs(solution);
-			System.out.println(violatedCtrs);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
 	}
 }
