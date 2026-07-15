@@ -1,19 +1,11 @@
 package model;
 
-import launch.SolveXCSPFZN;
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.Solver;
-import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
-import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
 
-import java.util.Objects;
-import java.util.function.Supplier;
-
-import static minicpbp.cp.BranchingScheme.*;
-import static minicpbp.cp.BranchingScheme.domWdeg;
-import static minicpbp.cp.Factory.*;
+import java.util.List;
 
 public abstract class ModelFormatFrontend {
     protected final Solver minicp;
@@ -29,7 +21,7 @@ public abstract class ModelFormatFrontend {
 
     abstract public String getSolutionStr(boolean extractSolutionStr);
 
-    abstract public void onSolutionFound(SearchStatistics stats, String solutionStr, String solFileStr);
+    abstract public void onSolutionFound(SearchStatistics stats, String solutionStr);
 
     abstract public void onNoSolutionFound(SearchStatistics stats);
 
@@ -38,6 +30,10 @@ public abstract class ModelFormatFrontend {
     abstract public void verifySolution(String solutionStr);
 
     abstract public void printStats(SearchStatistics stats, String statsFileStr, Long runtime);
+
+    public void onAllSolutionsFound(SearchStatistics ignoredStats, List<String> solutionStrs) {
+        System.out.println("all solutions found, found " + solutionStrs.size() + " solutions");
+    }
 
     public void onPreInitFail() {
         System.out.println("problem failed before initiating the search");

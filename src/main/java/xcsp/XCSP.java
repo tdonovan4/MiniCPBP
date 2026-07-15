@@ -152,7 +152,7 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		return objectiveMinimize.orElse(null);
 	}
 
-	public void onSolutionFound(SearchStatistics stats, String solutionStr, String solFileStr) {
+	public void onSolutionFound(SearchStatistics stats, String solutionStr) {
 		if (!competitionOutput) {
 			System.out.println("solution found");
 		} else {

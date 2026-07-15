@@ -3,11 +3,10 @@ package launch;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.PrintWriter;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -16,6 +15,7 @@ import minicpbp.engine.core.Solver;
 import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
 import minicpbp.util.Procedure;
+import minicpbp.util.SolutionDistribution;
 import model.ModelFormatFrontend;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -99,6 +99,7 @@ public class SolveXCSPFZN {
 	private int nbFailCutof = 100;
 	private double restartFactor = 1.5;
 	private boolean initImpact = false;
+	private boolean enumerateSolutions = false;
 
 	// TODO: unused fields, figure out if we want to keep them
 	private boolean damp = false;
@@ -181,10 +182,18 @@ public class SolveXCSPFZN {
 
 		boolean extractSolutionStr = checkSolution || (!Objects.equals(solFileStr, ""));
 		AtomicBoolean foundSolution = new AtomicBoolean(false);
-		AtomicReference<String> solutionStr = new AtomicReference<>();
+		List<String> solutionStrs = new ArrayList<>();
+		SolutionDistribution trueMarginals = new SolutionDistribution();
 		search.onSolution(() -> {
 			foundSolution.set(true);
-			solutionStr.set(frontend.getSolutionStr(extractSolutionStr));
+			String solutionStr = frontend.getSolutionStr(extractSolutionStr);
+			if (enumerateSolutions) {
+				solutionStrs.add(solutionStr);
+				trueMarginals.addSolution(decisionsVars);
+			} else {
+				// No need to keep other solutions, only keep latest
+				solutionStrs.add(0, solutionStr);
+			}
 		});
 
 		SearchStatistics stats;
@@ -200,13 +209,14 @@ public class SolveXCSPFZN {
 						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
 				break;
 			default:
+				Predicate<SearchStatistics> limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || (!enumerateSolutions && foundSolution.get()));
 				//find a solution that satisfies all constraints without restart
 				if(!restart) {
-					stats = search.solve(ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || foundSolution.get()));
+					stats = search.solve(limit);
 				}
 				//find a solution that satisfies all constraints with restarts during the search
 				else {
-					stats = search.solveRestarts(ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || foundSolution.get()), nbFailCutof, restartFactor);
+					stats = search.solveRestarts(limit, nbFailCutof, restartFactor);
 				}
 				break;
 		}
@@ -214,11 +224,28 @@ public class SolveXCSPFZN {
 
 		// Print result
 
-		if (foundSolution.get()) {
-			frontend.onSolutionFound(stats, solutionStr.get(), solFileStr);
-			if (checkSolution)
-				frontend.verifySolution(solutionStr.get());
-			printSolution(solFileStr);
+		if (foundSolution.get() && (!enumerateSolutions || stats.isCompleted())) {
+			if (enumerateSolutions) {
+				frontend.onAllSolutionsFound(stats, solutionStrs);
+			} else {
+				frontend.onSolutionFound(stats, solutionStrs.get(0));
+			}
+
+			if (checkSolution) {
+				for (int i = 0; i < solutionStrs.size(); i++) {
+					if (solutionStrs.size() > 1) {
+						System.out.println("verifying solution " + (i + 1));
+					}
+					frontend.verifySolution(solutionStrs.get(i));
+				}
+			}
+
+			if (enumerateSolutions) {
+				System.out.println("printing true marginals of " + solutionStrs.size() + " solutions");
+				System.out.println(trueMarginals);
+			}
+
+			printSolutions(solutionStrs);
 		} else if (stats.isCompleted()) {
 			frontend.onNoSolutionFound(stats);
 		} else {
@@ -313,6 +340,9 @@ public class SolveXCSPFZN {
 		Option traceEntropyOpt = Option.builder().longOpt("trace-entropy").hasArg(false).desc("trace the evolution of model's entropy after each BP iteration")
 				.build();
 
+		Option enumerateSolutionsOpt = Option.builder().longOpt("enumerate-solutions").hasArg(false).desc("search for all solutions and print true marginals (only for CSPs)")
+				.build();
+
 		Options options = new Options();
 		options.addOption(xcspFileOpt);
 		options.addOption(branchingOpt);
@@ -334,6 +364,7 @@ public class SolveXCSPFZN {
 		options.addOption(dynamicStopBPOpt);
 		options.addOption(traceNbIterOpt);
 		options.addOption(traceEntropyOpt);
+		options.addOption(enumerateSolutionsOpt);
 
 		CommandLineParser parser = new DefaultParser();
 		CommandLine cmd = null;
@@ -390,6 +421,7 @@ public class SolveXCSPFZN {
 		restart = (cmd.hasOption("restart"));
 		initImpact = (cmd.hasOption("init-impact"));
 		dynamicStopBP = (cmd.hasOption("dynamic-stop"));
+		enumerateSolutions = (cmd.hasOption("enumerate-solutions"));
 
 		traceBP = (cmd.hasOption("trace-bp"));
 		traceSearch = (cmd.hasOption("trace-search"));
@@ -452,6 +484,9 @@ public class SolveXCSPFZN {
 	public void setInitImpact(boolean initImpact) {
 		this.initImpact = initImpact;
 	}
+	public void setEnumerateSolutions(boolean enumerateSolutions) {
+		this.enumerateSolutions = enumerateSolutions;
+	}
 
 	/**
 	 * Creates a search (either DFS or LDS) with a given branching heuristic
@@ -474,11 +509,13 @@ public class SolveXCSPFZN {
 		return search;
 	}
 
-	private void printSolution(String solutionStr) {
+	private void printSolutions(List<String> solutionStrs) {
 		if (!Objects.equals(solFileStr, "")) {
 			try {
 				PrintWriter out = new PrintWriter(new File(solFileStr));
-				out.print(solutionStr);
+				for (String solutionStr : solutionStrs) {
+					out.print(solutionStr);
+				}
 				out.close();
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -551,6 +588,5 @@ public class SolveXCSPFZN {
 			System.exit(1);
 		}
 	}
-
 }
 

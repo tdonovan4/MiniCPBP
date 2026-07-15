@@ -63,7 +63,7 @@ public class FZN extends ModelFormatFrontend {
 		return m.getObjective();
 	}
 
-	public void onSolutionFound(SearchStatistics stats, String solutionStr, String solFileStr) {
+	public void onSolutionFound(SearchStatistics stats, String solutionStr) {
 		if(stats.isCompleted()) {
 			System.out.println("==========");
 		}
