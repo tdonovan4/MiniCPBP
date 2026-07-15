@@ -10,8 +10,10 @@ public class SolutionDistribution {
     // Variable-value marginals, they are sorted to pretty print them easier.
     // Impossible variable-value assignations are not stored.
     SortedMap<String, SortedMap<Integer, Integer>> marginals = new TreeMap<>();
+    int nSolutions = 0;
 
     public void addSolution(IntVar[] vars) {
+        nSolutions += 1;
         for (IntVar var : vars) {
             String name = var.getName();
             if (name != null) {
@@ -23,14 +25,14 @@ public class SolutionDistribution {
 
     @Override
     public String toString() {
-        StringJoiner varJoiner = new StringJoiner(",\n", "marginals: {\n", "\n}");
+        StringJoiner variableJoiner = new StringJoiner("\n");
         for (Map.Entry<String, SortedMap<Integer, Integer>> varEntry : marginals.entrySet()) {
-            StringJoiner valueJoiner = new StringJoiner(", ", "{ ", " }");
+            StringJoiner valueJoiner = new StringJoiner(", ", varEntry.getKey() + "{", "}");
             for (Map.Entry<Integer, Integer> valueEntry : varEntry.getValue().entrySet()) {
-                valueJoiner.add(valueEntry.getKey() + ":" + valueEntry.getValue());
+                valueJoiner.add(valueEntry.getKey() + "  <" + valueEntry.getValue() + "/" + nSolutions + ">");
             }
-            varJoiner.add("  " + varEntry.getKey() + ": " + valueJoiner);
+            variableJoiner.add(valueJoiner.toString());
         }
-        return varJoiner.toString();
+        return variableJoiner.toString();
     }
 }
