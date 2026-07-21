@@ -24,6 +24,7 @@ import minicpbp.util.Belief;
 import minicpbp.util.exception.IntOverFlowException;
 import minicpbp.util.exception.InconsistencyException;
 
+import java.util.Iterator;
 import java.util.Set;
 
 /**
@@ -254,6 +255,19 @@ public class IntVarViewOffset implements IntVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert x.marginal(v - o) <= beliefRep.one() && x.marginal(v - o) >= beliefRep.zero() : "x.marginal(v - o) = " + x.marginal(v - o);
         x.setMarginal(v - o, beliefRep.multiply(x.marginal(v - o), b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double oldB, double newB) {
+        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
+        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
+        assert x.marginal(v - o) <= beliefRep.one() && x.marginal(v - o) >= beliefRep.zero() : "x.marginal(v - o) = " + x.marginal(v - o);
+        x.setMarginal(v - o, beliefRep.multiply(x.marginal(v - o), beliefRep.divide(newB, oldB)));
+    }
+
+    @Override
+    public Iterator<Constraint> constraints() {
+        return x.constraints();
     }
 
     @Override

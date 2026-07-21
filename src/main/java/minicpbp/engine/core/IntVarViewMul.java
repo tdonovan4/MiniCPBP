@@ -26,12 +26,13 @@ import minicpbp.util.Belief;
 import minicpbp.util.exception.IntOverFlowException;
 import minicpbp.util.exception.NotImplementedException;
 
+import java.util.Iterator;
 import java.util.Set;
 
 /**
  * A view on a variable of type {@code a*x}
  */
-public class  IntVarViewMul implements IntVar {
+public class IntVarViewMul implements IntVar {
 
     private final int a;
     private final IntVar x;
@@ -322,6 +323,23 @@ public class  IntVarViewMul implements IntVar {
         } else {
             throw new InconsistencyException();
 	}
+    }
+
+    @Override
+    public void receiveMessage(int v, double oldB, double newB) {
+        assert oldB<=beliefRep.one() && oldB>=beliefRep.zero() : "oldB = "+oldB ;
+        assert newB<=beliefRep.one() && newB>=beliefRep.zero() : "newB = "+newB ;
+        if (v % a == 0) {
+            assert x.marginal(v/a)<=beliefRep.one() && x.marginal(v/a)>=beliefRep.zero() : "x.marginal(v/a) = "+x.marginal(v/a) ;
+            x.setMarginal(v/a,beliefRep.multiply(x.marginal(v/a),beliefRep.divide(newB, oldB)));
+        } else {
+            throw new InconsistencyException();
+        }
+    }
+
+    @Override
+    public Iterator<Constraint> constraints() {
+        return x.constraints();
     }
 
     @Override

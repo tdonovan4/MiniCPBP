@@ -25,6 +25,8 @@ import minicpbp.util.Belief;
 
 import minicpbp.util.exception.NotImplementedException;
 
+import java.util.Iterator;
+
 /**
  * Abstract class most of the constraints
  * should extend.
@@ -40,8 +42,9 @@ public abstract class AbstractConstraint implements Constraint {
     private final StateBool active;
 
     private StateDouble[][] localBelief;
+    private double[][] prevLocalBelief; // needed for RBP
     private double[][] outsideBelief;
-    private StateDouble[][] prevOutsideBelief; // needed for message damping
+    private StateDouble[][] prevOutsideBelief; // needed for message damping and RBP
     private double weight; // an optional nonnegative weight applied to the constraint's local belief
     protected Belief beliefRep;
     private int[] ofs;
@@ -70,6 +73,7 @@ public abstract class AbstractConstraint implements Constraint {
                 break;
         }
         localBelief = new StateDouble[vars.length][];
+        prevLocalBelief = new double[vars.length][];
         ofs = new int[vars.length];
         outsideBelief = new double[vars.length][];
         prevOutsideBelief = new StateDouble[vars.length][];
@@ -79,11 +83,13 @@ public abstract class AbstractConstraint implements Constraint {
             vars[i].registerConstraint(this);
             ofs[i] = vars[i].min();
             localBelief[i] = new StateDouble[vars[i].max() - vars[i].min() + 1];
+            prevLocalBelief[i] = new double[localBelief[i].length];
             outsideBelief[i] = new double[vars[i].max() - vars[i].min() + 1];
             prevOutsideBelief[i] = new StateDouble[outsideBelief[i].length];
             for (int j = 0; j < localBelief[i].length; j++) {
                 localBelief[i][j] = cp.getStateManager().makeStateDouble(beliefRep.one()); // no belief yet; initialized to ONE (certainly true) in order to retrieve the first var-to-constraint msg correctly
-                prevOutsideBelief[i][j] = cp.getStateManager().makeStateDouble(beliefRep.one()); // arbitrary
+                prevLocalBelief[i][j] = beliefRep.one();
+                prevOutsideBelief[i][j] = cp.getStateManager().makeStateDouble(beliefRep.zero()); // arbitrary
             }
             maxDomainSize = Math.max(maxDomainSize, vars[i].max() - vars[i].min() + 1);
         }
@@ -176,6 +182,15 @@ public abstract class AbstractConstraint implements Constraint {
         return localBelief[i][val - ofs[i]].setValue(b);
     }
 
+    protected double prevLocalBelief(int i, int val) {
+        return prevLocalBelief[i][val - ofs[i]];
+    }
+
+    protected double setPrevLocalBelief(int i, int val, double b) {
+        prevLocalBelief[i][val - ofs[i]] = b;
+        return b;
+    }
+
     protected double outsideBelief(int i, int val) {
         return outsideBelief[i][val - ofs[i]];
     }
@@ -235,6 +250,7 @@ public abstract class AbstractConstraint implements Constraint {
             double uniform = beliefRep.divide(beliefRep.one(),(double) s);
             for (int j = 0; j < s; j++) {
                 setOutsideBelief(i, domainValues[j], uniform);
+                setPrevOutsideBelief(i, domainValues[j], uniform);
             }
         }
     }
@@ -252,25 +268,16 @@ public abstract class AbstractConstraint implements Constraint {
 
     public void receiveMessages() {
         for (int i = 0; i < vars.length; i++) {
-            if (vars[i].isBound()) {
-                setOutsideBelief(i, vars[i].min(), beliefRep.one());
-            } else {
-                int s = vars[i].fillArray(domainValues);
-                for (int j = 0; j < s; j++) {
-                    int val = domainValues[j];
-                    assert localBelief(i, val) <= beliefRep.one() && localBelief(i, val) >= beliefRep.zero() : "c Should be normalized! localBelief(i,val) = " + localBelief(i, val);
-                    setOutsideBelief(i, val, vars[i].sendMessage(val, beliefRep.pow(localBelief(i, val), this.weight)));
-                }
-                normalizeBelief(i, (j, val) -> outsideBelief(j, val),
-                        (j, val, b) -> setOutsideBelief(j, val, b));
-                if (cp.dampingMessages()) {
-                    if (cp.prevOutsideBeliefRecorded())
-                        dampenMessages(i);
-                    for (int j = 0; j < s; j++) {
-                        int val = domainValues[j];
-                        setPrevOutsideBelief(i, val, outsideBelief(i, val));
-                    }
-                }
+            receiveMessage(i);
+        }
+    }
+
+    public void receiveMessage(IntVar x) {
+        for (int i = 0; i < vars.length; i++) {
+            // Identity comparison is used to identify the exact object
+            if (vars[i] == x) {
+                receiveMessage(i);
+                break;
             }
         }
     }
@@ -291,18 +298,35 @@ public abstract class AbstractConstraint implements Constraint {
                     assert localB <= beliefRep.one() && localB >= beliefRep.zero() : "c Should be normalized! localB = " + localB;
                     if (getSolver().actingOnZeroOneBelief() && isExactWCounting()) {
                         if (beliefRep.isZero(localB)) { // no support from this constraint
-  			                // System.out.println(getName()+".sendMessages(): removing value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ZERO");
+                            // System.out.println(getName()+".sendMessages(): removing value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ZERO");
                             vars[i].remove(val); // standard domain consistency filtering
                             getSolver().fixPoint();
+                            break;
                         } else if (beliefRep.isOne(localB)) { // backbone var for this constraint (and hence for all of them)
-  			                // System.out.println(getName()+".sendMessages(): assigning value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ONE");
+                            // System.out.println(getName()+".sendMessages(): assigning value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ONE");
                             vars[i].assign(val);
                             getSolver().fixPoint();
                             break; // all other values in this loop will have been removed from the domain
-                        } else
-                            vars[i].receiveMessage(val, beliefRep.pow(localB, this.weight));
-                    } else
+                        }
+                    }
+                    if (cp.getBpMode() != Solver.BpMode.RBP){
                         vars[i].receiveMessage(val, beliefRep.pow(localB, this.weight));
+                    } else {
+                        double prevLocalB = prevLocalBelief(i, val);
+                        assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
+                        vars[i].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
+                        setPrevLocalBelief(i, val, localBelief(i, val));
+                        setPrevOutsideBelief(i, val, outsideBelief(i, val));
+                    }
+                }
+
+                if (cp.getBpMode() == Solver.BpMode.RBP) {
+                    cp.getResidualPQ().setResidual(vars[i], this, 0);
+                    for (Iterator<Constraint> it = vars[i].constraints(); it.hasNext(); ) {
+                        Constraint c = it.next();
+                        // Index might be different so pass object instead
+                        c.receiveMessage(vars[i]);
+                    }
                 }
             }
         }
@@ -412,5 +436,50 @@ public abstract class AbstractConstraint implements Constraint {
     @Override
     public void setName(String name) {
         this.name = name;
+    }
+
+    private void receiveMessage(int varIdx) {
+        if (vars[varIdx].isBound()) {
+            setOutsideBelief(varIdx, vars[varIdx].min(), beliefRep.one());
+        } else {
+            int s = vars[varIdx].fillArray(domainValues);
+            for (int j = 0; j < s; j++) {
+                int val = domainValues[j];
+                assert localBelief(varIdx, val) <= beliefRep.one() && localBelief(varIdx, val) >= beliefRep.zero() : "c Should be normalized! localBelief(i,val) = " + localBelief(varIdx, val);
+                setOutsideBelief(varIdx, val, vars[varIdx].sendMessage(val, beliefRep.pow(localBelief(varIdx, val), this.weight)));
+            }
+            normalizeBelief(varIdx, (j, val) -> outsideBelief(j, val),
+                    (j, val, b) -> setOutsideBelief(j, val, b));
+            if (cp.dampingMessages()) {
+                if (cp.prevOutsideBeliefRecorded())
+                    dampenMessages(varIdx);
+            }
+
+            // TODO: investigate this
+            if (cp.dampingMessages() && cp.getBpMode() != Solver.BpMode.RBP) {
+                for (int j = 0; j < s; j++) {
+                    int val = domainValues[j];
+                    setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));
+                }
+            }
+
+            if (cp.getBpMode() == Solver.BpMode.RBP) {
+                cp.getResidualPQ().setResidual(vars[varIdx], this, residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
+            }
+        }
+    }
+
+    private double residual(double[] a, StateDouble[] b) {
+        // L-infinity norm
+        assert a.length == b.length;
+        double max = 0;
+        for (int i = 0; i < a.length; i++) {
+            double diff = Math.abs(a[i] - b[i].value());
+            if (diff > max) {
+                max = diff;
+            }
+        }
+
+        return max;
     }
 }

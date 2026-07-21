@@ -86,6 +86,11 @@ public interface Constraint {
     void receiveMessages();
 
     /**
+     * Collects messages (outside beliefs) from a variable x in its scope.
+     */
+    void receiveMessage(IntVar x);
+
+    /**
      * Updates its local belief (given the outside beliefs) and sends it 
      * as messages to the variables in its scope.
      */

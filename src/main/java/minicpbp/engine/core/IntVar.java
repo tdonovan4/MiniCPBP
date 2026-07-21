@@ -21,6 +21,7 @@ package minicpbp.engine.core;
 import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
 
+import java.util.Iterator;
 import java.util.Set;
 
 public interface IntVar {
@@ -311,6 +312,16 @@ public interface IntVar {
     void receiveMessage(int v, double b);
 
     /**
+     * Replace in the marginal of the specified value
+     * the local belief of a constraint.
+     *
+     * @param v the value, b the local belief
+     * @exception InconsistencyException
+     *            is thrown if the value is not in the domain
+     */
+    void receiveMessage(int v, double oldB, double newB);
+
+    /**
      * @param b is True if the variable is a variable that can be branched on
      * is False if the variable is an auxiliary variable
      */
@@ -333,6 +344,7 @@ public interface IntVar {
      */
     public int wDeg();
 
+    public Iterator<Constraint> constraints();
 
     public String getName();
     public void setName(String name);

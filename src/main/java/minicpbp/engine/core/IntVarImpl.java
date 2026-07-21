@@ -332,6 +332,10 @@ public class IntVarImpl implements IntVar {
         return sum;
     }
 
+    public Iterator<Constraint> constraints() {
+        return constraints.iterator();
+    }
+
     @Override
     public int valueWithMinImpact() {
         return domain.valueWithMinImpact();
@@ -361,6 +365,14 @@ public class IntVarImpl implements IntVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert domain.marginal(v) <= beliefRep.one() && domain.marginal(v) >= beliefRep.zero() : "domain.marginal(v) = " + domain.marginal(v);
         domain.setMarginal(v, beliefRep.multiply(domain.marginal(v), b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double oldB, double newB) {
+        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
+        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
+        assert domain.marginal(v) <= beliefRep.one() && domain.marginal(v) >= beliefRep.zero() : "domain.marginal(v) = " + domain.marginal(v);
+        domain.setMarginal(v, beliefRep.multiply(domain.marginal(v), beliefRep.divide(newB, oldB)));
     }
 
     @Override

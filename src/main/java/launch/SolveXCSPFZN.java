@@ -5,7 +5,6 @@ import java.io.FileNotFoundException;
 import java.io.PrintWriter;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -77,6 +76,13 @@ public class SolveXCSPFZN {
 		}
 	};
 
+	private static Map<String, Solver.BpMode> bpModeMap = new HashMap<String, Solver.BpMode>() {
+		{
+			put("standard", Solver.BpMode.Standard);
+			put("rbp", Solver.BpMode.RBP);
+		}
+	};
+
 	private Solver minicp = makeSolver();
 
 	// Tracing flags
@@ -91,6 +97,7 @@ public class SolveXCSPFZN {
 
 	// Optional Params
 	private TreeSearchType searchType = TreeSearchType.DFS;
+	private Solver.BpMode bpMode = Solver.BpMode.Standard;
 	private boolean checkSolution = false;
 	private String statsFileStr = "";
 	private String solFileStr = "";
@@ -116,6 +123,7 @@ public class SolveXCSPFZN {
 		minicp.setTraceSearchFlag(traceSearch);
 		minicp.setTraceEntropyFlag(traceEntropy);
 		minicp.setMaxIter(maxIter);
+		minicp.setBpMode(bpMode);
 		// TODO: check if these should be commented out or removed
 //		minicp.setDamp(damp);
 //		minicp.setDampingFactor(dampingFactor);
@@ -282,6 +290,9 @@ public class SolveXCSPFZN {
 		String quotedValidSearchTypes = searchTypeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
+		String quotedValidBpMod = bpModeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
+				.collect(Collectors.joining(",\n"));
+
 		Option xcspFileOpt = Option.builder().longOpt("input").argName("FILE").required().hasArg()
 				.desc("input FZN or XCSP file").build();
 
@@ -290,6 +301,9 @@ public class SolveXCSPFZN {
 
 		Option searchOpt = Option.builder().longOpt("search-type").argName("SEARCH").required().hasArg()
 				.desc("search type.\nValid search types are:\n" + quotedValidSearchTypes).build();
+
+		Option bpModeOpt = Option.builder().longOpt("bp-mode").argName("BP MODE").hasArg()
+				.desc("bp mode.\nValid bp modes are:\n" + quotedValidBpMod).build();
 
 		Option timeoutOpt = Option.builder().longOpt("timeout").argName("SECONDS").required().hasArg()
 				.desc("timeout in seconds").build();
@@ -347,6 +361,7 @@ public class SolveXCSPFZN {
 		options.addOption(xcspFileOpt);
 		options.addOption(branchingOpt);
 		options.addOption(searchOpt);
+		options.addOption(bpModeOpt);
 		options.addOption(timeoutOpt);
 		options.addOption(statsFileOpt);
 		options.addOption(solFileOpt);
@@ -383,6 +398,12 @@ public class SolveXCSPFZN {
 		String searchTypeStr = cmd.getOptionValue("search-type");
 		checkSearchTypeOption(searchTypeStr);
 		searchType = searchTypeMap.get(searchTypeStr);
+
+		String bpModeStr = cmd.getOptionValue("bp-mode");
+		if (bpModeStr != null) {
+			checkBpModeOption(bpModeStr);
+			bpMode = bpModeMap.get(bpModeStr);
+		}
 
 
 		inputStr = cmd.getOptionValue("input");
@@ -543,6 +564,17 @@ public class SolveXCSPFZN {
 			System.out.println("Search type should be one of the following: ");
 			for (String branching : searchTypeMap.keySet())
 				System.out.println(branching);
+			System.exit(1);
+		}
+	}
+
+	private static void checkBpModeOption(String bpModeStr) {
+
+		if (!bpModeMap.containsKey(bpModeStr)) {
+			System.out.println("invalid BP mode " + bpModeStr);
+			System.out.println("BP mode should be one of the following: ");
+			for (String mode : bpModeMap.keySet())
+				System.out.println(mode);
 			System.exit(1);
 		}
 	}

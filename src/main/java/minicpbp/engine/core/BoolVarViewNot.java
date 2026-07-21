@@ -23,6 +23,7 @@ import minicpbp.util.Procedure;
 import minicpbp.util.Belief;
 import minicpbp.util.exception.InconsistencyException;
 
+import java.util.Iterator;
 import java.util.Set;
 
 /**
@@ -262,6 +263,19 @@ public class BoolVarViewNot implements BoolVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert x.marginal(1-v) <= beliefRep.one() && x.marginal(1-v) >= beliefRep.zero() : "x.marginal(not v) = " + x.marginal(1-v);
         x.setMarginal(1-v, beliefRep.multiply(x.marginal(1-v), b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double oldB, double newB) {
+        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
+        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
+        assert x.marginal(1-v) <= beliefRep.one() && x.marginal(1-v) >= beliefRep.zero() : "x.marginal(not v) = " + x.marginal(1-v);
+        x.setMarginal(1-v, beliefRep.multiply(x.marginal(1-v), beliefRep.divide(newB, oldB)));
+    }
+
+    @Override
+    public Iterator<Constraint> constraints() {
+        return x.constraints();
     }
 
     @Override

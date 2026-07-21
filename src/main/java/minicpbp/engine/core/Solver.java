@@ -23,20 +23,26 @@ import minicpbp.state.StateManager;
 import minicpbp.state.StateStack;
 import minicpbp.util.Procedure;
 import minicpbp.util.Belief;
+import minicpbp.util.ResidualPQ;
 
 import java.util.Random;
 
 public interface Solver {
 
-    public enum PropaMode {
+    enum PropaMode {
 	SP /* support propagation (aka standard constraint propagation) */, 
 	BP /* belief propagation */, 
         SBP /* first apply support propagation, then belief propagation, and finally support propagation again if belief propagation may have assigned or removed domain values */
     } 
 
-    public enum ConstraintWeighingScheme {
+    enum ConstraintWeighingScheme {
 	SAME   /* constraints all have the same weight; = 1.0 (default) */,
 	ARITY  /* a constraint's weight is related to its arity; = 1 + arity/total_nb_of_vars */
+    }
+
+    enum BpMode {
+        Standard,
+        RBP
     }
 
     /**
@@ -79,6 +85,17 @@ public interface Solver {
      * @param mode
      */
     void setMode(PropaMode mode);
+
+    /**
+     * @return the bp mode
+     */
+    BpMode getBpMode();
+
+    /**
+     * Set the bp mode
+     * @param mode
+     */
+    void setBpMode(BpMode mode);
 
     /**
      * @return the constraint weighing scheme
@@ -289,5 +306,10 @@ public interface Solver {
      */
     void globalGradients();
 
+    /**
+     * Priority queue used by RBP to find the maximal residual
+     * @return the priority queue
+     */
+    ResidualPQ getResidualPQ();
 }
 

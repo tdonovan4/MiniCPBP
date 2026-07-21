@@ -23,11 +23,8 @@ import minicpbp.search.Objective;
 import minicpbp.state.StateInt;
 import minicpbp.state.StateManager;
 import minicpbp.state.StateStack;
+import minicpbp.util.*;
 import minicpbp.util.exception.InconsistencyException;
-import minicpbp.util.Procedure;
-import minicpbp.util.Belief;
-import minicpbp.util.StdBelief;
-import minicpbp.util.LogBelief;
 import minicpbp.engine.constraints.LinEqSystemModP;
 
 import java.util.*;
@@ -50,6 +47,9 @@ public class MiniCP implements Solver {
     // BP  /* belief propagation */
     // SBP /* first apply support propagation, then belief propagation */
     private static PropaMode mode = PropaMode.SBP;
+    // Standard  /* standard belief propagation */
+    // RBP /* residual belief propagation */
+    private static BpMode bpMode = BpMode.Standard;
     // nb of BP iterations performed
     private static int beliefPropaMaxIter = 10;
     // apply damping to variable-to-constraint messages
@@ -92,6 +92,9 @@ public class MiniCP implements Solver {
     private StateInt sumDomainSizes;
     private long trigger = 0;
     private long potentialTrigger = 0;
+
+    // for RBP
+    private final ResidualPQ residualPQ = new ResidualPQ();
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -146,6 +149,14 @@ public class MiniCP implements Solver {
 
     public PropaMode getMode() {
         return mode;
+    }
+
+    public void setBpMode(BpMode mode) {
+        MiniCP.bpMode = mode;
+    }
+
+    public BpMode getBpMode() {
+        return bpMode;
     }
 
     public ConstraintWeighingScheme getWeighingScheme() {
@@ -318,13 +329,32 @@ public class MiniCP implements Solver {
                 while (iterator.hasNext()) {
                     iterator.next().resetMarginals();
                 }
+
                  Iterator<Constraint> iteratorC = constraints.iterator();
                 while (iteratorC.hasNext()) {
                     c = iteratorC.next();
-                    if (c.isActive())
+                    if (c.isActive()) {
                         c.resetLocalBelief();
+                        if (bpMode == BpMode.RBP) {
+//                            c.resetOutsideBelief();
+                            c.receiveMessages();
+                        }
+                    }
                 }
                 prevOutsideBeliefRecorded = false;
+
+                if (bpMode == BpMode.RBP) {
+                    residualPQ.reset();
+
+                    // All constraints must be reset before sending messages
+                    iteratorC = constraints.iterator();
+                    while (iteratorC.hasNext()) {
+                        c = iteratorC.next();
+                        if (c.isActive()) {
+                            c.sendMessages();
+                        }
+                    }
+                }
             }
             double previousEntropy, currentEntropy = 1.0;
             int iter;
@@ -469,10 +499,26 @@ public class MiniCP implements Solver {
             Iterator<Constraint> iteratorC = constraints.iterator();
             while (iteratorC.hasNext()) {
                 c = iteratorC.next();
-                if (c.isActive())
+                if (c.isActive()) {
                     c.resetLocalBelief();
+                    if (bpMode == BpMode.RBP) {
+//                        c.resetOutsideBelief();
+                        c.receiveMessages();
+                    }
+                }
             }
             prevOutsideBeliefRecorded = false;
+            if (bpMode == BpMode.RBP) {
+                residualPQ.reset();
+                // All constraints must be reset before sending messages
+                iteratorC = constraints.iterator();
+                while (iteratorC.hasNext()) {
+                    c = iteratorC.next();
+                    if (c.isActive()) {
+                        c.sendMessages();
+                    }
+                }
+            }
             currentEntropy = 1.0;
             currentDeltaEntropy = 0;
             valleyCount = 0;
@@ -511,31 +557,51 @@ public class MiniCP implements Solver {
         }
     }
 
+    public ResidualPQ getResidualPQ() {
+        return residualPQ;
+    }
+
     /**
      * a single iteration of Belief Propagation:
      * from variables to constraints, and then from constraints to variables
      */
     private void BPiteration() {
-        Constraint c;
-        Iterator<Constraint> iteratorC = constraints.iterator();
-        while (iteratorC.hasNext()) {
-            c = iteratorC.next();
-            if (c.isActive())
-                c.receiveMessages();
-        }
-        Iterator<IntVar> iterator = variables.iterator();
-        while (iterator.hasNext()) {
-            iterator.next().resetMarginals(); // prepare to receive all the messages from constraints
-        }
-       iteratorC = constraints.iterator();
-        while (iteratorC.hasNext()) {
-            c = iteratorC.next();
-            if (c.isActive())
-                c.sendMessages();
-        }
-        iterator = variables.iterator();
-        while (iterator.hasNext()) {
-            iterator.next().normalizeMarginals();
+        if (bpMode != BpMode.RBP) {
+            Constraint c;
+            Iterator<Constraint> iteratorC = constraints.iterator();
+            while (iteratorC.hasNext()) {
+                c = iteratorC.next();
+                if (c.isActive())
+                    c.receiveMessages();
+            }
+            Iterator<IntVar> iterator = variables.iterator();
+            while (iterator.hasNext()) {
+                iterator.next().resetMarginals(); // prepare to receive all the messages from constraints
+            }
+            iteratorC = constraints.iterator();
+            while (iteratorC.hasNext()) {
+                c = iteratorC.next();
+                if (c.isActive())
+                    c.sendMessages();
+            }
+            iterator = variables.iterator();
+            while (iterator.hasNext()) {
+                iterator.next().normalizeMarginals();
+            }
+        } else {
+            for (int i = 0; i < constraints.size() + variables.size() * 2; i++) {
+                if (residualPQ.isEmpty()) {
+                    break;
+                }
+                ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
+//                System.out.println(maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
+                maxResidual.to().sendMessages();
+            }
+
+            Iterator<IntVar> iterator = variables.iterator();
+            while (iterator.hasNext()) {
+                iterator.next().normalizeMarginals();
+            }
         }
     }
 
