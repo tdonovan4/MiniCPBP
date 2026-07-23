@@ -324,7 +324,6 @@ public abstract class AbstractConstraint implements Constraint {
                 }
 
                 if (cp.getBpMode().isAsync()) {
-                    // TODO: check if this is correct
                     vars[i].normalizeMarginals();
                     cp.getResidualPQ().setResidual(vars[i], this, 0);
                     if (cp.getTraceBPMsgsFlag()) {
@@ -464,7 +463,6 @@ public abstract class AbstractConstraint implements Constraint {
                     dampenMessages(varIdx);
             }
 
-            // TODO: investigate this
             if (cp.dampingMessages() && !cp.getBpMode().isAsync()) {
                 for (int j = 0; j < s; j++) {
                     int val = domainValues[j];

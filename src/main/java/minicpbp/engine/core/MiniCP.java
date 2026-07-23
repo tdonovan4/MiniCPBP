@@ -508,9 +508,8 @@ public class MiniCP implements Solver {
             Iterator<Constraint> iteratorC = constraints.iterator();
             while (iteratorC.hasNext()) {
                 c = iteratorC.next();
-                if (c.isActive()) {
+                if (c.isActive())
                     c.resetLocalBelief();
-                }
             }
             prevOutsideBeliefRecorded = false;
 
@@ -618,7 +617,7 @@ public class MiniCP implements Solver {
     }
 
     /**
-     * Reset and prepare for RBP
+     * Reset and prepare for async BP
      * Warning: marginals and local beliefs must already be reset
      */
     private void initAsyncBP() {
