@@ -308,4 +308,9 @@ public class IntVarViewOpposite implements IntVar {
         b.append("}");
         return b.toString();
     }
+
+    @Override
+    public IntVar getConcreteVar() {
+        return this.x;
+    }
 }

@@ -83,7 +83,7 @@ public class MiniCP implements Solver {
 
     // for message damping
     private boolean prevOutsideBeliefRecorded = false;
-    private boolean tuneDamping = true;
+    private boolean tuneDamping = false;
 
     // for weighing constraints
     private int minArity;
@@ -95,6 +95,7 @@ public class MiniCP implements Solver {
 
     // for RBP
     private final ResidualPQ residualPQ = new ResidualPQ();
+    private boolean hasSeenAllConstraintsImpactOnResiduals = false;
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -330,35 +331,27 @@ public class MiniCP implements Solver {
                     iterator.next().resetMarginals();
                 }
 
-                 Iterator<Constraint> iteratorC = constraints.iterator();
+                Iterator<Constraint> iteratorC = constraints.iterator();
                 while (iteratorC.hasNext()) {
                     c = iteratorC.next();
                     if (c.isActive()) {
                         c.resetLocalBelief();
-                        if (bpMode == BpMode.RBP) {
-//                            c.resetOutsideBelief();
-                            c.receiveMessages();
-                        }
                     }
                 }
                 prevOutsideBeliefRecorded = false;
 
                 if (bpMode == BpMode.RBP) {
-                    residualPQ.reset();
-
-                    // All constraints must be reset before sending messages
-                    iteratorC = constraints.iterator();
-                    while (iteratorC.hasNext()) {
-                        c = iteratorC.next();
-                        if (c.isActive()) {
-                            c.sendMessages();
-                        }
-                    }
+                    initRBP();
                 }
             }
             double previousEntropy, currentEntropy = 1.0;
             int iter;
             for (iter = 1; iter <= beliefPropaMaxIter; iter++) {
+//                System.out.println("##### after BP iteration 0 #####");
+//                for (int i = 0; i < variables.size(); i++) {
+//                    System.out.print(variables.get(i).getName());
+//                    System.out.println(variables.get(i).toString());
+//                }
                 BPiteration();
                 if (traceBP) {
                     System.out.println("##### after BP iteration " + iter + " #####");
@@ -589,18 +582,51 @@ public class MiniCP implements Solver {
                 iterator.next().normalizeMarginals();
             }
         } else {
-            for (int i = 0; i < constraints.size() + variables.size() * 2; i++) {
-                if (residualPQ.isEmpty()) {
+            if (!hasSeenAllConstraintsImpactOnResiduals) {
+                Iterator<Constraint> iteratorC = constraints.iterator();
+                Constraint c;
+                while (iteratorC.hasNext()) {
+                    c = iteratorC.next();
+                    if (c.isActive()) {
+                        c.sendMessages();
+                    }
+                }
+                hasSeenAllConstraintsImpactOnResiduals = true;
+                return;
+            }
+
+            double maxResidualValue = 1;
+            for (int i = 0; i < constraints.size(); i++) {
+                if (residualPQ.isEmpty() || maxResidualValue < 1e-3) {
+                    System.out.println("final maxResidual: " + maxResidualValue);
                     break;
                 }
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
-//                System.out.println(maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
+                System.out.println("maxResidual: " + maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
                 maxResidual.to().sendMessages();
+                maxResidualValue = maxResidual.residual();
             }
 
             Iterator<IntVar> iterator = variables.iterator();
             while (iterator.hasNext()) {
                 iterator.next().normalizeMarginals();
+            }
+        }
+    }
+
+    /**
+     * Reset and prepare for RBP
+     * Warning: marginals and local beliefs must already be reset
+     */
+    private void initRBP() {
+        residualPQ.reset();
+
+        Iterator<Constraint> iteratorC = constraints.iterator();
+        Constraint c;
+        while (iteratorC.hasNext()) {
+            c = iteratorC.next();
+            if (c.isActive()) {
+                c.resetOutsideBelief();
             }
         }
     }

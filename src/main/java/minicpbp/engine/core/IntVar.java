@@ -349,4 +349,11 @@ public interface IntVar {
     public String getName();
     public void setName(String name);
     public void registerConstraint(Constraint c);
+
+    /**
+     * Returns the concrete variable of a view.
+     * If the variable is not a view, returns itself
+     * @return The base variable
+     */
+    public IntVar getConcreteVar();
 }

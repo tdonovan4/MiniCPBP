@@ -364,5 +364,9 @@ public class IntVarViewMul implements IntVar {
     public void setName(String name) {
 	this.name = name;
     }
-    
+
+    @Override
+    public IntVar getConcreteVar() {
+        return this.x;
+    }
 }

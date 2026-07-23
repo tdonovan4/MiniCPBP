@@ -323,4 +323,9 @@ public class BoolVarViewNot implements BoolVar {
         b.append("}");
         return b.toString();
     }
+
+    @Override
+    public IntVar getConcreteVar() {
+        return this.x;
+    }
 }

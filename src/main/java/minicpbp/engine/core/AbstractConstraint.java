@@ -25,6 +25,7 @@ import minicpbp.util.Belief;
 
 import minicpbp.util.exception.NotImplementedException;
 
+import java.util.Arrays;
 import java.util.Iterator;
 
 /**
@@ -275,9 +276,9 @@ public abstract class AbstractConstraint implements Constraint {
     public void receiveMessage(IntVar x) {
         for (int i = 0; i < vars.length; i++) {
             // Identity comparison is used to identify the exact object
-            if (vars[i] == x) {
+            if (vars[i].getConcreteVar() == x.getConcreteVar()) {
                 receiveMessage(i);
-                break;
+                // Can't break because the variable can be present with one or multiple views
             }
         }
     }
@@ -291,6 +292,9 @@ public abstract class AbstractConstraint implements Constraint {
                         (j, val, b) -> setLocalBelief(j, val, b));
                 int s = vars[i].fillArray(domainValues);
  //               System.out.print(vars[i].getName()+": ");
+                System.out.println(getName() + "->" + vars[i].getName());
+                System.out.println("  Msg (old) : " + Arrays.toString(prevLocalBelief[i]));
+                System.out.println("  Msg : " + Arrays.toString(localBelief[i]));
                 for (int j = 0; j < s; j++) {
                     int val = domainValues[j];
                     double localB = localBelief(i, val);
@@ -321,11 +325,16 @@ public abstract class AbstractConstraint implements Constraint {
                 }
 
                 if (cp.getBpMode() == Solver.BpMode.RBP) {
+                    // TODO: check if this is correct
+                    vars[i].normalizeMarginals();
                     cp.getResidualPQ().setResidual(vars[i], this, 0);
+                    System.out.println("  Marginal :" + vars[i]);
                     for (Iterator<Constraint> it = vars[i].constraints(); it.hasNext(); ) {
                         Constraint c = it.next();
-                        // Index might be different so pass object instead
-                        c.receiveMessage(vars[i]);
+                        if (c.isActive() && c != this) {
+                            // Index might be different so pass object instead
+                            c.receiveMessage(vars[i]);
+                        }
                     }
                 }
             }
@@ -463,6 +472,10 @@ public abstract class AbstractConstraint implements Constraint {
                 }
             }
 
+            System.out.println(vars[varIdx].getName() + "->" + getName());
+            System.out.println("  Msg (old) :" + Arrays.toString(prevOutsideBelief[varIdx]));
+            System.out.println("  Msg :" + Arrays.toString(outsideBelief[varIdx]));
+            System.out.println("  Residual: " + residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
             if (cp.getBpMode() == Solver.BpMode.RBP) {
                 cp.getResidualPQ().setResidual(vars[varIdx], this, residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
             }

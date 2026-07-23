@@ -315,4 +315,9 @@ public class IntVarViewOffset implements IntVar {
         return b.toString();
 
     }
+
+    @Override
+    public IntVar getConcreteVar() {
+        return this.x;
+    }
 }
