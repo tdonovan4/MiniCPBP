@@ -128,7 +128,17 @@ public interface Solver {
      * Activate trace of BP if @param traceBP is true
      */
     void setTraceBPFlag(boolean traceBP);
-    
+
+    /**
+     * Returns if BP msgs tracing is enabled
+     */
+    boolean getTraceBPMsgsFlag();
+
+    /**
+     * Activate trace of BP msgs if @param traceBPMsgs is true
+     */
+    void setTraceBPMsgsFlag(boolean traceBPMsgs);
+
     /**
      * Activate trace of search if @param traceSearch is true
      */

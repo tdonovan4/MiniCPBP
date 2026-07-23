@@ -76,6 +76,7 @@ public class MiniCP implements Solver {
 
     //***** TRACING SWITCHES *****
     private static boolean traceBP = false;
+    private boolean traceBPMsgs = false;
     private static boolean traceSearch = false;
     private static boolean traceEntropy = false;
     //****************************
@@ -175,6 +176,12 @@ public class MiniCP implements Solver {
 
     public void setTraceBPFlag(boolean traceBP) {
         MiniCP.traceBP = traceBP;
+    }
+
+    public boolean getTraceBPMsgsFlag() { return traceBPMsgs; }
+
+    public void setTraceBPMsgsFlag(boolean traceBPMsgs) {
+        this.traceBPMsgs = traceBPMsgs;
     }
 
     public void setTraceSearchFlag(boolean traceSearch) {
@@ -593,11 +600,12 @@ public class MiniCP implements Solver {
             double maxResidualValue = 1;
             for (int i = 0; i < constraints.size(); i++) {
                 if (residualPQ.isEmpty() || maxResidualValue < 1e-3) {
-                    System.out.println("final maxResidual: " + maxResidualValue);
                     break;
                 }
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
-                System.out.println("maxResidual: " + maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
+                if (traceBPMsgs) {
+                    System.out.println("maxResidual: " + maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
+                }
                 maxResidual.to().sendMessages();
                 maxResidualValue = maxResidual.residual();
             }

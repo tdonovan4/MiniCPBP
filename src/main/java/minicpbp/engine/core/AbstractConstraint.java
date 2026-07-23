@@ -285,20 +285,19 @@ public abstract class AbstractConstraint implements Constraint {
 
     public void sendMessages() {
         updateBelief();
- //       System.out.println(getName()+".sendMessages()");
         for (int i = 0; i < vars.length; i++) {
             if (!vars[i].isBound()) { // if the variable is bound, it is pointless to send a "certainly true" message
                 normalizeBelief(i, (j, val) -> localBelief(j, val),
                         (j, val, b) -> setLocalBelief(j, val, b));
                 int s = vars[i].fillArray(domainValues);
- //               System.out.print(vars[i].getName()+": ");
-                System.out.println(getName() + "->" + vars[i].getName());
-                System.out.println("  Msg (old) : " + Arrays.toString(prevLocalBelief[i]));
-                System.out.println("  Msg : " + Arrays.toString(localBelief[i]));
+                if (cp.getTraceBPMsgsFlag()) {
+                    System.out.println(getName() + "->" + vars[i].getName());
+                    System.out.println("  Msg (old) : " + Arrays.toString(prevLocalBelief[i]));
+                    System.out.println("  Msg : " + Arrays.toString(localBelief[i]));
+                }
                 for (int j = 0; j < s; j++) {
                     int val = domainValues[j];
                     double localB = localBelief(i, val);
- //                   System.out.print(val+" "+localB+", ");
                     assert localB <= beliefRep.one() && localB >= beliefRep.zero() : "c Should be normalized! localB = " + localB;
                     if (getSolver().actingOnZeroOneBelief() && isExactWCounting()) {
                         if (beliefRep.isZero(localB)) { // no support from this constraint
@@ -328,7 +327,9 @@ public abstract class AbstractConstraint implements Constraint {
                     // TODO: check if this is correct
                     vars[i].normalizeMarginals();
                     cp.getResidualPQ().setResidual(vars[i], this, 0);
-                    System.out.println("  Marginal :" + vars[i]);
+                    if (cp.getTraceBPMsgsFlag()) {
+                        System.out.println("  Marginal :" + vars[i]);
+                    }
                     for (Iterator<Constraint> it = vars[i].constraints(); it.hasNext(); ) {
                         Constraint c = it.next();
                         if (c.isActive() && c != this) {
@@ -339,7 +340,6 @@ public abstract class AbstractConstraint implements Constraint {
                 }
             }
         }
-//        System.out.println();
     }
 
     /**
@@ -472,12 +472,18 @@ public abstract class AbstractConstraint implements Constraint {
                 }
             }
 
-            System.out.println(vars[varIdx].getName() + "->" + getName());
-            System.out.println("  Msg (old) :" + Arrays.toString(prevOutsideBelief[varIdx]));
-            System.out.println("  Msg :" + Arrays.toString(outsideBelief[varIdx]));
-            System.out.println("  Residual: " + residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
+            if (cp.getTraceBPMsgsFlag()) {
+                System.out.println(vars[varIdx].getName() + "->" + getName());
+                System.out.println("  Msg (old) :" + Arrays.toString(prevOutsideBelief[varIdx]));
+                System.out.println("  Msg :" + Arrays.toString(outsideBelief[varIdx]));
+            }
+
             if (cp.getBpMode().isAsync()) {
-                cp.getResidualPQ().setResidual(vars[varIdx], this, residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
+                double residual = residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]);
+                if (cp.getTraceBPMsgsFlag()) {
+                    System.out.println("  Residual: " + residual);
+                }
+                cp.getResidualPQ().setResidual(vars[varIdx], this, residual);
             }
         }
     }

@@ -96,6 +96,7 @@ public class SolveXCSPFZN {
 
 	// Tracing flags
 	private boolean traceBP = false;
+	private boolean traceBPMsgs = false;
 	private boolean traceSearch = false;
 	private boolean traceEntropy = false;
 
@@ -130,6 +131,7 @@ public class SolveXCSPFZN {
 		long t0 = System.currentTimeMillis();
 
 		minicp.setTraceBPFlag(traceBP);
+		minicp.setTraceBPMsgsFlag(traceBPMsgs);
 		minicp.setTraceSearchFlag(traceSearch);
 		minicp.setTraceEntropyFlag(traceEntropy);
 		minicp.setMaxIter(maxIter);
@@ -345,6 +347,9 @@ public class SolveXCSPFZN {
 		Option traceBPOpt = Option.builder().longOpt("trace-bp").hasArg(false)
 				.desc("trace the belief propagation progress").build();
 
+		Option traceBPMsgsOpt = Option.builder().longOpt("trace-bp-msgs").hasArg(false)
+				.desc("trace the belief propagation messages").build();
+
 		Option traceSearchOpt = Option.builder().longOpt("trace-search").hasArg(false).desc("trace the search progress")
 				.build();
 
@@ -386,6 +391,7 @@ public class SolveXCSPFZN {
 		options.addOption(maxIterOpt);
 		options.addOption(checkOpt);
 		options.addOption(traceBPOpt);
+		options.addOption(traceBPMsgsOpt);
 		options.addOption(traceSearchOpt);
 		options.addOption(dampOpt);
 		options.addOption(dFactorOpt);
@@ -468,6 +474,7 @@ public class SolveXCSPFZN {
 		enumerateSolutions = (cmd.hasOption("enumerate-solutions"));
 
 		traceBP = (cmd.hasOption("trace-bp"));
+		traceBPMsgs = (cmd.hasOption("trace-bp-msgs"));
 		traceSearch = (cmd.hasOption("trace-search"));
 		traceNbIter = (cmd.hasOption("trace-iter"));
 		traceEntropy = (cmd.hasOption("trace-entropy"));
