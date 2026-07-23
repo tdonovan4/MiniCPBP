@@ -83,7 +83,7 @@ public class MiniCP implements Solver {
 
     // for message damping
     private boolean prevOutsideBeliefRecorded = false;
-    private boolean tuneDamping = false;
+    private boolean tuneDamping = true;
 
     // for weighing constraints
     private int minArity;
@@ -503,23 +503,12 @@ public class MiniCP implements Solver {
                 c = iteratorC.next();
                 if (c.isActive()) {
                     c.resetLocalBelief();
-                    if (bpMode.isAsync()) {
-//                        c.resetOutsideBelief();
-                        c.receiveMessages();
-                    }
                 }
             }
             prevOutsideBeliefRecorded = false;
+
             if (bpMode.isAsync()) {
-                residualPQ.reset();
-                // All constraints must be reset before sending messages
-                iteratorC = constraints.iterator();
-                while (iteratorC.hasNext()) {
-                    c = iteratorC.next();
-                    if (c.isActive()) {
-                        c.sendMessages();
-                    }
-                }
+                initAsyncBP();
             }
             currentEntropy = 1.0;
             currentDeltaEntropy = 0;
