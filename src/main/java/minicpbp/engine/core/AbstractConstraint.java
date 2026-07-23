@@ -483,16 +483,30 @@ public abstract class AbstractConstraint implements Constraint {
     }
 
     private double residual(double[] a, StateDouble[] b) {
-        // L-infinity norm
         assert a.length == b.length;
-        double max = 0;
-        for (int i = 0; i < a.length; i++) {
-            double diff = Math.abs(a[i] - b[i].value());
-            if (diff > max) {
-                max = diff;
-            }
+        double sum = 0;
+        switch (cp.getRbpNorm()) {
+            case L1:
+                for (int i = 0; i < a.length; i++) {
+                    sum += Math.pow(a[i] - b[i].value(), 2);
+                }
+                return Math.sqrt(sum);
+            case L2:
+                for (int i = 0; i < a.length; i++) {
+                    sum += Math.abs(a[i] - b[i].value());
+                }
+                return sum;
+            case LInf:
+                double max = 0;
+                for (int i = 0; i < a.length; i++) {
+                    double diff = Math.abs(a[i] - b[i].value());
+                    if (diff > max) {
+                        max = diff;
+                    }
+                }
+                return max;
+            default:
+                throw new UnsupportedOperationException("Unsupported RBP norm: " + cp.getRbpNorm());
         }
-
-        return max;
     }
 }

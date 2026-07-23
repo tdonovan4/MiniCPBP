@@ -45,6 +45,12 @@ public interface Solver {
         RBP
     }
 
+    enum RbpNorm {
+        L1,
+        L2,
+        LInf
+    }
+
     /**
      * Posts the constraint, that is call {@link Constraint#post()}, and
      * DOES NOT compute the propagation fix-point. (Different from MiniCP)
@@ -87,15 +93,26 @@ public interface Solver {
     void setMode(PropaMode mode);
 
     /**
-     * @return the bp mode
+     * @return the BP mode
      */
     BpMode getBpMode();
 
     /**
-     * Set the bp mode
-     * @param mode
+     * Set the BP mode
+     * @param mode BP mode
      */
     void setBpMode(BpMode mode);
+
+    /**
+     * @return the RBP norm
+     */
+    RbpNorm getRbpNorm();
+
+    /**
+     * Set the RBP norm
+     * @param norm RBP norm
+     */
+    void setRbpNorm(RbpNorm norm);
 
     /**
      * @return the constraint weighing scheme

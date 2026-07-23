@@ -49,7 +49,7 @@ public class MiniCP implements Solver {
     private static PropaMode mode = PropaMode.SBP;
     // Standard  /* standard belief propagation */
     // RBP /* residual belief propagation */
-    private static BpMode bpMode = BpMode.Standard;
+    private BpMode bpMode = BpMode.Standard;
     // nb of BP iterations performed
     private static int beliefPropaMaxIter = 10;
     // apply damping to variable-to-constraint messages
@@ -94,6 +94,7 @@ public class MiniCP implements Solver {
     private long potentialTrigger = 0;
 
     // for RBP
+    private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
     private boolean hasSeenAllConstraintsImpactOnResiduals = false;
 
@@ -153,11 +154,19 @@ public class MiniCP implements Solver {
     }
 
     public void setBpMode(BpMode mode) {
-        MiniCP.bpMode = mode;
+        bpMode = mode;
     }
 
     public BpMode getBpMode() {
         return bpMode;
+    }
+
+    public void setRbpNorm(RbpNorm norm) {
+        rbpNorm = norm;
+    }
+
+    public RbpNorm getRbpNorm() {
+        return rbpNorm;
     }
 
     public ConstraintWeighingScheme getWeighingScheme() {

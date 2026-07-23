@@ -46,7 +46,7 @@ public class SolveXCSPFZN {
 		IBS, //impact-based search
 	}
 
-	private static Map<String, BranchingHeuristic> branchingMap = new HashMap<String, BranchingHeuristic>() {
+	private static final Map<String, BranchingHeuristic> branchingMap = new HashMap<String, BranchingHeuristic>() {
 		private static final long serialVersionUID = 4936849715939593675L;
 		{
 			put("first-fail-random-value", BranchingHeuristic.FFRV);
@@ -67,7 +67,7 @@ public class SolveXCSPFZN {
 		DFS, LDS, DFSR
 	}
 
-	private static Map<String, TreeSearchType> searchTypeMap = new HashMap<String, TreeSearchType>() {
+	private static final Map<String, TreeSearchType> searchTypeMap = new HashMap<String, TreeSearchType>() {
 		private static final long serialVersionUID = 8428231233538651558L;
 
 		{
@@ -76,14 +76,22 @@ public class SolveXCSPFZN {
 		}
 	};
 
-	private static Map<String, Solver.BpMode> bpModeMap = new HashMap<String, Solver.BpMode>() {
+	private static final Map<String, Solver.BpMode> bpModeMap = new HashMap<String, Solver.BpMode>() {
 		{
 			put("standard", Solver.BpMode.Standard);
 			put("rbp", Solver.BpMode.RBP);
 		}
 	};
 
-	private Solver minicp = makeSolver();
+	private static Map<String, Solver.RbpNorm> rbpNormMap = new HashMap<String, Solver.RbpNorm>() {
+		{
+			put("l1", Solver.RbpNorm.L1);
+			put("l2", Solver.RbpNorm.L2);
+			put("linf", Solver.RbpNorm.LInf);
+		}
+	};
+
+	private final Solver minicp = makeSolver();
 
 	// Tracing flags
 	private boolean traceBP = false;
@@ -98,6 +106,7 @@ public class SolveXCSPFZN {
 	// Optional Params
 	private TreeSearchType searchType = TreeSearchType.DFS;
 	private Solver.BpMode bpMode = Solver.BpMode.Standard;
+	private Solver.RbpNorm rbpNorm = Solver.RbpNorm.LInf;
 	private boolean checkSolution = false;
 	private String statsFileStr = "";
 	private String solFileStr = "";
@@ -124,6 +133,7 @@ public class SolveXCSPFZN {
 		minicp.setTraceEntropyFlag(traceEntropy);
 		minicp.setMaxIter(maxIter);
 		minicp.setBpMode(bpMode);
+		minicp.setRbpNorm(rbpNorm);
 		// TODO: check if these should be commented out or removed
 //		minicp.setDamp(damp);
 //		minicp.setDampingFactor(dampingFactor);
@@ -290,7 +300,10 @@ public class SolveXCSPFZN {
 		String quotedValidSearchTypes = searchTypeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
-		String quotedValidBpMod = bpModeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
+		String quotedValidBpMode = bpModeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
+				.collect(Collectors.joining(",\n"));
+
+		String quotedValidRbpNorm = rbpNormMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
 		Option xcspFileOpt = Option.builder().longOpt("input").argName("FILE").required().hasArg()
@@ -303,7 +316,10 @@ public class SolveXCSPFZN {
 				.desc("search type.\nValid search types are:\n" + quotedValidSearchTypes).build();
 
 		Option bpModeOpt = Option.builder().longOpt("bp-mode").argName("BP MODE").hasArg()
-				.desc("bp mode.\nValid bp modes are:\n" + quotedValidBpMod).build();
+				.desc("bp mode.\nValid bp modes are:\n" + quotedValidBpMode).build();
+
+		Option rbpNormOpt = Option.builder().longOpt("rbp-norm").argName("RBP NORM").hasArg()
+				.desc("bp mode.\nValid RBP norm are:\n" + quotedValidRbpNorm).build();
 
 		Option timeoutOpt = Option.builder().longOpt("timeout").argName("SECONDS").required().hasArg()
 				.desc("timeout in seconds").build();
@@ -362,6 +378,7 @@ public class SolveXCSPFZN {
 		options.addOption(branchingOpt);
 		options.addOption(searchOpt);
 		options.addOption(bpModeOpt);
+		options.addOption(rbpNormOpt);
 		options.addOption(timeoutOpt);
 		options.addOption(statsFileOpt);
 		options.addOption(solFileOpt);
@@ -405,6 +422,11 @@ public class SolveXCSPFZN {
 			bpMode = bpModeMap.get(bpModeStr);
 		}
 
+		String rbpNormStr = cmd.getOptionValue("rbp-norm");
+		if (rbpNormStr != null) {
+			checkRbpNormOption(rbpNormStr);
+			rbpNorm = rbpNormMap.get(rbpNormStr);
+		}
 
 		inputStr = cmd.getOptionValue("input");
 		checkInputOption(inputStr);
@@ -574,6 +596,17 @@ public class SolveXCSPFZN {
 			System.out.println("invalid BP mode " + bpModeStr);
 			System.out.println("BP mode should be one of the following: ");
 			for (String mode : bpModeMap.keySet())
+				System.out.println(mode);
+			System.exit(1);
+		}
+	}
+
+	private static void checkRbpNormOption(String rbpNormStr) {
+
+		if (!rbpNormMap.containsKey(rbpNormStr)) {
+			System.out.println("invalid RBP norm " + rbpNormStr);
+			System.out.println("RBP norm should be one of the following: ");
+			for (String mode : rbpNormMap.keySet())
 				System.out.println(mode);
 			System.exit(1);
 		}
