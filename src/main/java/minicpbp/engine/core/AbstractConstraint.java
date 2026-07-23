@@ -243,6 +243,7 @@ public abstract class AbstractConstraint implements Constraint {
             double uniform = beliefRep.divide(beliefRep.one(),(double) s);
             for (int j = 0; j < s; j++) {
                 setLocalBelief(i, domainValues[j], uniform);
+                setPrevLocalBelief(i, domainValues[j], uniform);
             }
         }
     }

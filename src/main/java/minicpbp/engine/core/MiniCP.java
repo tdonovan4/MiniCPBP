@@ -622,6 +622,7 @@ public class MiniCP implements Solver {
      */
     private void initAsyncBP() {
         residualPQ.reset();
+        hasPropagatedAllConstraints = false;
 
         Iterator<Constraint> iteratorC = constraints.iterator();
         Constraint c;
