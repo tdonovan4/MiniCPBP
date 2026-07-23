@@ -313,7 +313,7 @@ public abstract class AbstractConstraint implements Constraint {
                             break; // all other values in this loop will have been removed from the domain
                         }
                     }
-                    if (cp.getBpMode() != Solver.BpMode.RBP){
+                    if (!cp.getBpMode().isAsync()){
                         vars[i].receiveMessage(val, beliefRep.pow(localB, this.weight));
                     } else {
                         double prevLocalB = prevLocalBelief(i, val);
@@ -324,7 +324,7 @@ public abstract class AbstractConstraint implements Constraint {
                     }
                 }
 
-                if (cp.getBpMode() == Solver.BpMode.RBP) {
+                if (cp.getBpMode().isAsync()) {
                     // TODO: check if this is correct
                     vars[i].normalizeMarginals();
                     cp.getResidualPQ().setResidual(vars[i], this, 0);
@@ -465,7 +465,7 @@ public abstract class AbstractConstraint implements Constraint {
             }
 
             // TODO: investigate this
-            if (cp.dampingMessages() && cp.getBpMode() != Solver.BpMode.RBP) {
+            if (cp.dampingMessages() && !cp.getBpMode().isAsync()) {
                 for (int j = 0; j < s; j++) {
                     int val = domainValues[j];
                     setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));
@@ -476,7 +476,7 @@ public abstract class AbstractConstraint implements Constraint {
             System.out.println("  Msg (old) :" + Arrays.toString(prevOutsideBelief[varIdx]));
             System.out.println("  Msg :" + Arrays.toString(outsideBelief[varIdx]));
             System.out.println("  Residual: " + residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
-            if (cp.getBpMode() == Solver.BpMode.RBP) {
+            if (cp.getBpMode().isAsync()) {
                 cp.getResidualPQ().setResidual(vars[varIdx], this, residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]));
             }
         }

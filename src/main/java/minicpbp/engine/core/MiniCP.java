@@ -96,7 +96,7 @@ public class MiniCP implements Solver {
     // for RBP
     private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
-    private boolean hasSeenAllConstraintsImpactOnResiduals = false;
+    private boolean hasPropagatedAllConstraints = false;
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -349,8 +349,8 @@ public class MiniCP implements Solver {
                 }
                 prevOutsideBeliefRecorded = false;
 
-                if (bpMode == BpMode.RBP) {
-                    initRBP();
+                if (bpMode.isAsync()) {
+                    initAsyncBP();
                 }
             }
             double previousEntropy, currentEntropy = 1.0;
@@ -503,14 +503,14 @@ public class MiniCP implements Solver {
                 c = iteratorC.next();
                 if (c.isActive()) {
                     c.resetLocalBelief();
-                    if (bpMode == BpMode.RBP) {
+                    if (bpMode.isAsync()) {
 //                        c.resetOutsideBelief();
                         c.receiveMessages();
                     }
                 }
             }
             prevOutsideBeliefRecorded = false;
-            if (bpMode == BpMode.RBP) {
+            if (bpMode.isAsync()) {
                 residualPQ.reset();
                 // All constraints must be reset before sending messages
                 iteratorC = constraints.iterator();
@@ -568,7 +568,7 @@ public class MiniCP implements Solver {
      * from variables to constraints, and then from constraints to variables
      */
     private void BPiteration() {
-        if (bpMode != BpMode.RBP) {
+        if (!bpMode.isAsync()) {
             Constraint c;
             Iterator<Constraint> iteratorC = constraints.iterator();
             while (iteratorC.hasNext()) {
@@ -590,20 +590,17 @@ public class MiniCP implements Solver {
             while (iterator.hasNext()) {
                 iterator.next().normalizeMarginals();
             }
-        } else {
-            if (!hasSeenAllConstraintsImpactOnResiduals) {
-                Iterator<Constraint> iteratorC = constraints.iterator();
-                Constraint c;
-                while (iteratorC.hasNext()) {
-                    c = iteratorC.next();
-                    if (c.isActive()) {
-                        c.sendMessages();
-                    }
+        } else if (!hasPropagatedAllConstraints || bpMode == BpMode.ABP) {
+            Iterator<Constraint> iteratorC = constraints.iterator();
+            Constraint c;
+            while (iteratorC.hasNext()) {
+                c = iteratorC.next();
+                if (c.isActive()) {
+                    c.sendMessages();
                 }
-                hasSeenAllConstraintsImpactOnResiduals = true;
-                return;
             }
-
+            hasPropagatedAllConstraints = true;
+        } else {
             double maxResidualValue = 1;
             for (int i = 0; i < constraints.size(); i++) {
                 if (residualPQ.isEmpty() || maxResidualValue < 1e-3) {
@@ -627,7 +624,7 @@ public class MiniCP implements Solver {
      * Reset and prepare for RBP
      * Warning: marginals and local beliefs must already be reset
      */
-    private void initRBP() {
+    private void initAsyncBP() {
         residualPQ.reset();
 
         Iterator<Constraint> iteratorC = constraints.iterator();

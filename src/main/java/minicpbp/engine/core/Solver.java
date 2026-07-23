@@ -42,7 +42,12 @@ public interface Solver {
 
     enum BpMode {
         Standard,
-        RBP
+        ABP,
+        RBP;
+
+        boolean isAsync() {
+            return this == ABP || this == RBP;
+        }
     }
 
     enum RbpNorm {
