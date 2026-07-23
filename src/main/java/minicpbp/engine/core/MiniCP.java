@@ -629,6 +629,7 @@ public class MiniCP implements Solver {
             c = iteratorC.next();
             if (c.isActive()) {
                 c.resetOutsideBelief();
+                c.resetPropagationCount();
             }
         }
     }

@@ -56,6 +56,7 @@ public abstract class AbstractConstraint implements Constraint {
     private boolean exactWCounting = false;
     private boolean updateBeliefWarningPrinted = false;
     private boolean weightedCountingWarningPrinted = false;
+    private int propagationCount = 0;
 
     private int failureCount;
 
@@ -255,6 +256,9 @@ public abstract class AbstractConstraint implements Constraint {
             }
         }
     }
+    public void resetPropagationCount() {
+        this.propagationCount = 0;
+    }
 
     private void dampenMessages(int i) {
         double lambda = beliefRep.std2rep(cp.dampingFactor());
@@ -285,6 +289,7 @@ public abstract class AbstractConstraint implements Constraint {
 
     public void sendMessages() {
         updateBelief();
+        this.propagationCount++;
         for (int i = 0; i < vars.length; i++) {
             if (!vars[i].isBound()) { // if the variable is bound, it is pointless to send a "certainly true" message
                 normalizeBelief(i, (j, val) -> localBelief(j, val),
@@ -488,29 +493,34 @@ public abstract class AbstractConstraint implements Constraint {
 
     private double residual(double[] a, StateDouble[] b) {
         assert a.length == b.length;
-        double sum = 0;
+        double residual = 0;
         switch (cp.getRbpNorm()) {
             case L1:
                 for (int i = 0; i < a.length; i++) {
-                    sum += Math.pow(a[i] - b[i].value(), 2);
+                    residual += Math.pow(a[i] - b[i].value(), 2);
                 }
-                return Math.sqrt(sum);
+                residual = Math.sqrt(residual);
+                break;
             case L2:
                 for (int i = 0; i < a.length; i++) {
-                    sum += Math.abs(a[i] - b[i].value());
+                    residual += Math.abs(a[i] - b[i].value());
                 }
-                return sum;
+                break;
             case LInf:
-                double max = 0;
                 for (int i = 0; i < a.length; i++) {
                     double diff = Math.abs(a[i] - b[i].value());
-                    if (diff > max) {
-                        max = diff;
+                    if (diff > residual) {
+                        residual = diff;
                     }
                 }
-                return max;
+                break;
             default:
                 throw new UnsupportedOperationException("Unsupported RBP norm: " + cp.getRbpNorm());
+        }
+        if (cp.getBpMode() == Solver.BpMode.WDBP) {
+            return residual / propagationCount;
+        } else {
+            return residual;
         }
     }
 }

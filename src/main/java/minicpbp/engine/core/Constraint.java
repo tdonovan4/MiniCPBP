@@ -107,6 +107,11 @@ public interface Constraint {
     void resetOutsideBelief();
 
     /**
+     * Sets propagation count to 0.
+     */
+    void resetPropagationCount();
+
+    /**
      * Sets the constraint's weight to a nonnegative value.
      * w > 1 amplifies deviations from the uniform belief;
      * w < 1 dampens deviations from the uniform belief.

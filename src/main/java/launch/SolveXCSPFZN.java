@@ -81,6 +81,7 @@ public class SolveXCSPFZN {
 			put("standard", Solver.BpMode.Standard);
 			put("rbp", Solver.BpMode.RBP);
 			put("abp", Solver.BpMode.ABP);
+			put("wdbp", Solver.BpMode.WDBP);
 		}
 	};
 
