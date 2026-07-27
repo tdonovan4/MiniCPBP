@@ -23,7 +23,7 @@ import minicpbp.state.StateDouble;
 
 import minicpbp.util.Belief;
 
-import minicpbp.util.exception.NotImplementedException;
+import minicpbp.util.ResidualPQ;
 
 import java.util.Arrays;
 import java.util.Iterator;
@@ -56,7 +56,9 @@ public abstract class AbstractConstraint implements Constraint {
     private boolean exactWCounting = false;
     private boolean updateBeliefWarningPrinted = false;
     private boolean weightedCountingWarningPrinted = false;
-    private int propagationCount = 0;
+    // For WDBP
+    private int[] inboundPropagationCount;
+    private int[] outboundPropagationCount;
 
     private int failureCount;
 
@@ -257,8 +259,9 @@ public abstract class AbstractConstraint implements Constraint {
             }
         }
     }
-    public void resetPropagationCount() {
-        this.propagationCount = 0;
+    public void resetPropagationCounts() {
+        this.inboundPropagationCount = new int[vars.length];
+        this.outboundPropagationCount = new int[vars.length];
     }
 
     private void dampenMessages(int i) {
@@ -290,62 +293,60 @@ public abstract class AbstractConstraint implements Constraint {
 
     public void sendMessages() {
         updateBelief();
-        this.propagationCount++;
         for (int i = 0; i < vars.length; i++) {
-            if (!vars[i].isBound()) { // if the variable is bound, it is pointless to send a "certainly true" message
-                normalizeBelief(i, (j, val) -> localBelief(j, val),
-                        (j, val, b) -> setLocalBelief(j, val, b));
-                int s = vars[i].fillArray(domainValues);
-                if (cp.getTraceBPMsgsFlag()) {
-                    System.out.println(getName() + "->" + vars[i].getName());
-                    System.out.println("  Msg (old) : " + Arrays.toString(prevLocalBelief[i]));
-                    System.out.println("  Msg : " + Arrays.toString(localBelief[i]));
-                }
-                for (int j = 0; j < s; j++) {
-                    int val = domainValues[j];
-                    double localB = localBelief(i, val);
-                    assert localB <= beliefRep.one() && localB >= beliefRep.zero() : "c Should be normalized! localB = " + localB;
-                    if (getSolver().actingOnZeroOneBelief() && isExactWCounting()) {
-                        if (beliefRep.isZero(localB)) { // no support from this constraint
-                            // System.out.println(getName()+".sendMessages(): removing value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ZERO");
-                            vars[i].remove(val); // standard domain consistency filtering
-                            getSolver().fixPoint();
-                            break;
-                        } else if (beliefRep.isOne(localB)) { // backbone var for this constraint (and hence for all of them)
-                            // System.out.println(getName()+".sendMessages(): assigning value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ONE");
-                            vars[i].assign(val);
-                            getSolver().fixPoint();
-                            break; // all other values in this loop will have been removed from the domain
-                        }
-                    }
-                    if (!cp.getBpMode().isAsync()){
-                        vars[i].receiveMessage(val, beliefRep.pow(localB, this.weight));
-                    } else {
-                        double prevLocalB = prevLocalBelief(i, val);
-                        assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
-                        vars[i].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
-                        setPrevLocalBelief(i, val, localBelief(i, val));
-                        setPrevOutsideBelief(i, val, outsideBelief(i, val));
-                    }
-                }
+            sendMessage(i, true);
+        }
+    }
 
-                if (cp.getBpMode().isAsync()) {
-                    vars[i].normalizeMarginals();
-                    cp.getResidualPQ().setResidual(vars[i], this, 0);
-                    if (cp.getTraceBPMsgsFlag()) {
-                        System.out.println("  Marginal :" + vars[i]);
-                    }
-                    for (Iterator<Constraint> it = vars[i].constraints(); it.hasNext(); ) {
-                        Constraint c = it.next();
-                        if (c.isActive() && c != this) {
-                            // Index might be different so pass object instead
-                            c.receiveMessage(vars[i]);
-                        }
-                    }
-                }
+    public void sendMessage(IntVar x) {
+        for (int i = 0; i < vars.length; i++) {
+            // Identity comparison is used to identify the exact object
+            if (vars[i] == x) {
+                sendMessage(i, false);
+                break;
             }
         }
     }
+
+    public void updateVarsResiduals() {
+        updateBelief();
+        if (cp.getTraceBPMsgsFlag()) {
+            System.out.println("Recomputing local belief and updating outbound messages");
+        }
+        for (int i = 0; i < vars.length; i++) {
+            if (!vars[i].isBound()) {
+                normalizeBelief(i, this::localBelief, this::setLocalBelief);
+                int s = vars[i].fillArray(domainValues);
+                for (int j = 0; j < s; j++) {
+                    int val = domainValues[j];
+                    // This outside belief was used to update the local belief, mark it as up to date
+                    setPrevOutsideBelief(i, val, outsideBelief(i, val));
+                }
+
+                int finalI = i;
+                Iterator<Double> localBeliefIterator = Arrays.stream(domainValues).limit(s)
+                        .mapToDouble((val) -> beliefRep.pow(localBelief(finalI, val), this.weight)).iterator();
+                Iterator<Double> prevLocalBeliefIterator = Arrays.stream(domainValues).limit(s)
+                        .mapToDouble((val) -> beliefRep.pow(prevLocalBelief(finalI, val), this.weight)).iterator();
+                double outboundResidual = residual(localBeliefIterator, prevLocalBeliefIterator, outboundPropagationCount[i]);
+
+                if (cp.getTraceBPMsgsFlag()) {
+                    System.out.println("  " + this.getName() + "->" + vars[i].getName() + " updated residual: " + outboundResidual);
+                }
+                ResidualPQ residualPQ = cp.getResidualPQ();
+                Double inboundResidual = residualPQ.getResidual(vars[i], this);
+                if (inboundResidual == null || inboundResidual > 0) {
+                    // Since the updated outside belief was used, we can mark the message from the variable as up to date
+                    cp.getResidualPQ().setResidual(vars[i], this, 0);
+                    // Should we only increment the message with the max residual instead?
+                    inboundPropagationCount[i]++;
+                }
+                // Mark the message to the variable as outdated
+                cp.getResidualPQ().setResidual(this, vars[i], outboundResidual);
+            }
+        }
+    }
+
 
     /**
      * Returns the semantic loss, computed using weighted model counting.
@@ -452,6 +453,75 @@ public abstract class AbstractConstraint implements Constraint {
         this.name = name;
     }
 
+    private void sendMessage(int varIdx, boolean wasLocalBeliefUpdated) {
+        if (!vars[varIdx].isBound()) { // if the variable is bound, it is pointless to send a "certainly true" message
+            normalizeBelief(varIdx, this::localBelief, this::setLocalBelief);
+            int s = vars[varIdx].fillArray(domainValues);
+            if (cp.getTraceBPMsgsFlag()) {
+                System.out.println(getName() + "->" + vars[varIdx].getName());
+                System.out.println("  Msg (old) : " + Arrays.toString(prevLocalBelief[varIdx]));
+                System.out.println("  Msg : " + Arrays.toString(localBelief[varIdx]));
+            }
+            for (int j = 0; j < s; j++) {
+                int val = domainValues[j];
+                double localB = localBelief(varIdx, val);
+                assert localB <= beliefRep.one() && localB >= beliefRep.zero() : "c Should be normalized! localB = " + localB;
+                if (getSolver().actingOnZeroOneBelief() && isExactWCounting()) {
+                    if (beliefRep.isZero(localB)) { // no support from this constraint
+                        // System.out.println(getName()+".sendMessages(): removing value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ZERO");
+                        vars[varIdx].remove(val); // standard domain consistency filtering
+                        getSolver().fixPoint();
+                        break;
+                    } else if (beliefRep.isOne(localB)) { // backbone var for this constraint (and hence for all of them)
+                        // System.out.println(getName()+".sendMessages(): assigning value "+val+" from the domain of "+vars[i].getName()+vars[i].toString()+" because its local belief is ONE");
+                        vars[varIdx].assign(val);
+                        getSolver().fixPoint();
+                        break; // all other values in this loop will have been removed from the domain
+                    }
+                }
+                if (!cp.getBpMode().isAsync()){
+                    vars[varIdx].receiveMessage(val, beliefRep.pow(localB, this.weight));
+                } else {
+                    double prevLocalB = prevLocalBelief(varIdx, val);
+                    assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
+
+                    vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
+                    setPrevLocalBelief(varIdx, val, localBelief(varIdx, val));
+                    if (wasLocalBeliefUpdated) {
+                        // This outside belief was used to update the local belief, mark it as up to date
+                        setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));
+                    }
+                }
+            }
+
+            if (cp.getBpMode().isAsync()) {
+                vars[varIdx].normalizeMarginals();
+                outboundPropagationCount[varIdx]++;
+                cp.getResidualPQ().setResidual(this, vars[varIdx], 0);
+                if (cp.getTraceBPMsgsFlag()) {
+                    System.out.println("  Marginal :" + vars[varIdx]);
+                }
+                if (wasLocalBeliefUpdated) {
+                    Double inboundResidual = cp.getResidualPQ().getResidual(vars[varIdx], this);
+                    if (inboundResidual == null || inboundResidual > 0) {
+                        // Since the updated outside belief was used, we can mark the message from the variable as up to date
+                        cp.getResidualPQ().setResidual(vars[varIdx], this, 0);
+                        // Should we only increment the message with the max residual instead?
+                        inboundPropagationCount[varIdx]++;
+                    }
+                }
+                // Notify other constraints of this update
+                for (Iterator<Constraint> it = vars[varIdx].constraints(); it.hasNext(); ) {
+                    Constraint c = it.next();
+                    if (c.isActive() && c != this) {
+                        // Index might be different so pass object instead
+                        c.receiveMessage(vars[varIdx]);
+                    }
+                }
+            }
+        }
+    }
+
     private void receiveMessage(int varIdx) {
         if (vars[varIdx].isBound()) {
             setOutsideBelief(varIdx, vars[varIdx].min(), beliefRep.one());
@@ -462,8 +532,7 @@ public abstract class AbstractConstraint implements Constraint {
                 assert localBelief(varIdx, val) <= beliefRep.one() && localBelief(varIdx, val) >= beliefRep.zero() : "c Should be normalized! localBelief(i,val) = " + localBelief(varIdx, val);
                 setOutsideBelief(varIdx, val, vars[varIdx].sendMessage(val, beliefRep.pow(localBelief(varIdx, val), this.weight)));
             }
-            normalizeBelief(varIdx, (j, val) -> outsideBelief(j, val),
-                    (j, val, b) -> setOutsideBelief(j, val, b));
+            normalizeBelief(varIdx, this::outsideBelief, this::setOutsideBelief);
             if (cp.dampingMessages()) {
                 if (cp.prevOutsideBeliefRecorded())
                     dampenMessages(varIdx);
@@ -483,7 +552,7 @@ public abstract class AbstractConstraint implements Constraint {
             }
 
             if (cp.getBpMode().isAsync()) {
-                double residual = residual(outsideBelief[varIdx], prevOutsideBelief[varIdx]);
+                double residual = residual(outsideBelief[varIdx], prevOutsideBelief[varIdx], inboundPropagationCount[varIdx]);
                 if (cp.getTraceBPMsgsFlag()) {
                     System.out.println("  Residual: " + residual);
                 }
@@ -492,24 +561,31 @@ public abstract class AbstractConstraint implements Constraint {
         }
     }
 
-    private double residual(double[] a, StateDouble[] b) {
-        assert a.length == b.length;
+    private double residual(double[] a, StateDouble[] b, int propagationCount) {
+        return residual(Arrays.stream(a).iterator(), Arrays.stream(b).map(StateDouble::value).iterator(), propagationCount);
+    }
+
+    private double residual(Iterator<Double> a, Iterator<Double> b, int propagationCount) {
+        if (propagationCount == 0) {
+            return Double.POSITIVE_INFINITY;
+        }
+
         double residual = 0;
         switch (cp.getRbpNorm()) {
             case L1:
-                for (int i = 0; i < a.length; i++) {
-                    residual += Math.pow(a[i] - b[i].value(), 2);
+                while (a.hasNext() && b.hasNext()) {
+                    residual += Math.pow(a.next() - b.next(), 2);
                 }
                 residual = Math.sqrt(residual);
                 break;
             case L2:
-                for (int i = 0; i < a.length; i++) {
-                    residual += Math.abs(a[i] - b[i].value());
+                while (a.hasNext() && b.hasNext()) {
+                    residual += Math.abs(a.next() - b.next());
                 }
                 break;
             case LInf:
-                for (int i = 0; i < a.length; i++) {
-                    double diff = Math.abs(a[i] - b[i].value());
+                while (a.hasNext() && b.hasNext()) {
+                    double diff = Math.abs(a.next() - b.next());
                     if (diff > residual) {
                         residual = diff;
                     }
@@ -518,6 +594,8 @@ public abstract class AbstractConstraint implements Constraint {
             default:
                 throw new UnsupportedOperationException("Unsupported RBP norm: " + cp.getRbpNorm());
         }
+        assert !a.hasNext() && !b.hasNext() : "both sides should have the same number of values";
+
         if (cp.getBpMode() == Solver.BpMode.WDBP) {
             return residual / propagationCount;
         } else {

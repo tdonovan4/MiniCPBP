@@ -97,6 +97,19 @@ public interface Constraint {
     void sendMessages();
 
     /**
+     * Send the current local belief for x to the x variable.
+     * Warning: unlike sendMessages, the local belief is not updated
+     * @param x Updated variable
+     */
+    void sendMessage(IntVar x);
+
+    /**
+     * Updates its local belief (given the outside beliefs) and updates
+     * the residuals of the messages to the variables in its scope.
+     */
+    void updateVarsResiduals();
+
+    /**
      * Sets the local belief to uniform distribution.
      */
     void resetLocalBelief();
@@ -109,7 +122,7 @@ public interface Constraint {
     /**
      * Sets propagation count to 0.
      */
-    void resetPropagationCount();
+    void resetPropagationCounts();
 
     /**
      * Sets the constraint's weight to a nonnegative value.

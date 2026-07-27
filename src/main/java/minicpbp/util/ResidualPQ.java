@@ -6,19 +6,130 @@ import minicpbp.engine.core.IntVar;
 import java.util.*;
 
 public class ResidualPQ {
-    IndexedMaxPQ<Double> pq;
-    HashMap<Map.Entry<IntVar, Constraint>, Integer> indexMap;
-    Map.Entry<IntVar, Constraint>[] reverseIndexMap;
+    // Private type to hold message data
+    private static class Message {
+        public IntVar x;
+        public Constraint c;
+        public boolean isFromVarToConstraint;
 
-    @SuppressWarnings("unchecked")
+        public Message(IntVar x, Constraint c, boolean b) {
+            this.x = x;
+            this.c = c;
+            this.isFromVarToConstraint = b;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Message message = (Message) o;
+            return isFromVarToConstraint == message.isFromVarToConstraint && Objects.equals(x, message.x) && Objects.equals(c, message.c);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, c, isFromVarToConstraint);
+        }
+    }
+
+    IndexedMaxPQ<Double> pq;
+    HashMap<Message, Integer> indexMap;
+    Message[] reverseIndexMap;
+
     public ResidualPQ() {
         pq = new IndexedMaxPQ<>(20);
         indexMap = new HashMap<>();
-        reverseIndexMap = (Map.Entry<IntVar, Constraint>[]) new Map.Entry[20];
+        reverseIndexMap = new Message[20];
     }
 
     public void setResidual(IntVar x, Constraint c, double r) {
-        Map.Entry<IntVar, Constraint> key = new AbstractMap.SimpleImmutableEntry<>(x, c);
+        Message key = new Message(x, c, true);
+        setResidual(key, r);
+    }
+
+    public void setResidual(Constraint c, IntVar x, double r) {
+        Message key = new Message(x, c, false);
+        setResidual(key, r);
+    }
+
+    public Double getResidual(IntVar x, Constraint c) {
+        Message key = new Message(x, c, true);
+        return getResidual(key);
+    }
+
+    public Double getResidual(Constraint c, IntVar x) {
+        Message key = new Message(x, c, false);
+        return getResidual(key);
+    }
+
+    public boolean isEmpty() {
+        return indexMap.isEmpty();
+    }
+
+    public interface Residual {
+        Object from();
+        Object to();
+        double residual();
+    }
+
+    private static class ResidualImpl<F, T> implements Residual {
+        F from;
+        T to;
+        double residual;
+
+        public ResidualImpl(F from, T to, double residual) {
+            this.from = from;
+            this.to = to;
+            this.residual = residual;
+        }
+
+        public F from() {
+            return from;
+        }
+
+        public T to() {
+            return to;
+        }
+
+        public double residual() {
+            return residual;
+        }
+    }
+
+    public static class VarToConstraintResidual extends ResidualImpl<IntVar, Constraint> implements Residual {
+        public VarToConstraintResidual(IntVar from, Constraint to, double residual) {
+            super(from, to, residual);
+        }
+    }
+
+    public static class ConstraintToVarResidual extends ResidualImpl<Constraint, IntVar> implements Residual {
+        public ConstraintToVarResidual(Constraint from, IntVar to, double residual) {
+            super(from, to, residual);
+        }
+    }
+
+    public Residual maxResidual() {
+        int index = pq.topIndex();
+        double r = pq.topKey();
+        Message entry = reverseIndexMap[index];
+        if (entry.isFromVarToConstraint) {
+            return new VarToConstraintResidual(entry.x, entry.c, r);
+        } else {
+            return new ConstraintToVarResidual(entry.c, entry.x, r);
+        }
+    }
+
+    public void reset() {
+        pq.clear();
+        indexMap.clear();
+        Arrays.fill(reverseIndexMap, null);
+    }
+
+    public int size() {
+        return indexMap.size();
+    }
+
+    private void setResidual(Message key, double r) {
         Integer index = indexMap.get(key);
         if (index == null) {
             index = pq.insert(r);
@@ -32,50 +143,17 @@ public class ResidualPQ {
         }
     }
 
-    public boolean isEmpty() {
-        return indexMap.isEmpty();
-    }
-
-    public static class Residual {
-        IntVar x;
-        Constraint c;
-        double r;
-
-        private Residual(IntVar x, Constraint c, double r) {
-            this.x = x;
-            this.c = c;
-            this.r = r;
-        }
-
-        public IntVar from() {
-            return x;
-        }
-
-        public Constraint to() {
-            return c;
-        }
-
-        public double residual() {
-            return r;
+    private Double getResidual(Message key) {
+        Integer index = indexMap.get(key);
+        if (index == null) {
+            return null;
+        } else {
+            return pq.get(index);
         }
     }
 
-    public Residual maxResidual() {
-        int index = pq.topIndex();
-        double r = pq.topKey();
-        Map.Entry<IntVar, Constraint> entry = reverseIndexMap[index];
-        return new Residual(entry.getKey(), entry.getValue(), r);
-    }
-
-    public void reset() {
-        pq.clear();
-        indexMap.clear();
-        Arrays.fill(reverseIndexMap, null);
-    }
-
-    @SuppressWarnings("unchecked")
     private void resize(int capacity) {
-        Map.Entry<IntVar, Constraint>[] tempReverseIndexMap = (Map.Entry<IntVar, Constraint>[]) new Map.Entry[capacity + 1];
+        Message[] tempReverseIndexMap = new Message[capacity + 1];
         System.arraycopy(reverseIndexMap, 0, tempReverseIndexMap, 0, Math.min(reverseIndexMap.length, tempReverseIndexMap.length));
         this.reverseIndexMap = tempReverseIndexMap;
     }

@@ -61,6 +61,16 @@ public class IndexedMaxPQ<Key extends Comparable<Key>> {
     }
 
     /*
+     * Get the key at the index
+     */
+    public Key get(int i) {
+        if (contains(i)) {
+            return keys[i];
+        }
+        return null;
+    }
+
+    /*
      * Update the key associated with index i to a new value
      */
     public void update(int i, Key key) {

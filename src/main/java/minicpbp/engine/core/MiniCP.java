@@ -97,7 +97,7 @@ public class MiniCP implements Solver {
     // for RBP
     private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
-    private boolean hasPropagatedAllConstraints = false;
+    private boolean hasPropagatedAllMessages = false;
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -585,7 +585,7 @@ public class MiniCP implements Solver {
             while (iterator.hasNext()) {
                 iterator.next().normalizeMarginals();
             }
-        } else if (!hasPropagatedAllConstraints || bpMode == BpMode.ABP) {
+        } else if (!hasPropagatedAllMessages || bpMode == BpMode.ABP) {
             Iterator<Constraint> iteratorC = constraints.iterator();
             Constraint c;
             while (iteratorC.hasNext()) {
@@ -594,19 +594,26 @@ public class MiniCP implements Solver {
                     c.sendMessages();
                 }
             }
-            hasPropagatedAllConstraints = true;
+            hasPropagatedAllMessages = true;
         } else {
-            double maxResidualValue = 1;
-            for (int i = 0; i < constraints.size(); i++) {
-                if (residualPQ.isEmpty() || maxResidualValue < 1e-3) {
+            for (int i = 0; i < residualPQ.size(); i++) {
+                ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
+                if (maxResidual.residual() < 1e-20) {
                     break;
                 }
-                ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
-                if (traceBPMsgs) {
-                    System.out.println("maxResidual: " + maxResidual.to().getName() + "->" + maxResidual.from().getName() + "=" + maxResidual.residual());
+                if (maxResidual instanceof ResidualPQ.VarToConstraintResidual) {
+                    ResidualPQ.VarToConstraintResidual maxResidualXToC = (ResidualPQ.VarToConstraintResidual) maxResidual;
+                    if (traceBPMsgs) {
+                        System.out.println("maxResidual: " + maxResidualXToC.from().getName() + "->" + maxResidualXToC.to().getName() + "=" + maxResidualXToC.residual());
+                    }
+                    maxResidualXToC.to().updateVarsResiduals();
+                } else if (maxResidual instanceof ResidualPQ.ConstraintToVarResidual) {
+                    ResidualPQ.ConstraintToVarResidual maxResidualCToX = (ResidualPQ.ConstraintToVarResidual) maxResidual;
+                    if (traceBPMsgs) {
+                        System.out.println("maxResidual: " + maxResidualCToX.from().getName() + "->" + maxResidualCToX.to().getName() + "=" + maxResidualCToX.residual());
+                    }
+                    maxResidualCToX.from().sendMessage(maxResidualCToX.to());
                 }
-                maxResidual.to().sendMessages();
-                maxResidualValue = maxResidual.residual();
             }
 
             Iterator<IntVar> iterator = variables.iterator();
@@ -622,7 +629,7 @@ public class MiniCP implements Solver {
      */
     private void initAsyncBP() {
         residualPQ.reset();
-        hasPropagatedAllConstraints = false;
+        hasPropagatedAllMessages = false;
 
         Iterator<Constraint> iteratorC = constraints.iterator();
         Constraint c;
@@ -630,7 +637,7 @@ public class MiniCP implements Solver {
             c = iteratorC.next();
             if (c.isActive()) {
                 c.resetOutsideBelief();
-                c.resetPropagationCount();
+                c.resetPropagationCounts();
             }
         }
     }
