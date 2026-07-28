@@ -529,8 +529,15 @@ public abstract class AbstractConstraint implements Constraint {
             int s = vars[varIdx].fillArray(domainValues);
             for (int j = 0; j < s; j++) {
                 int val = domainValues[j];
-                assert localBelief(varIdx, val) <= beliefRep.one() && localBelief(varIdx, val) >= beliefRep.zero() : "c Should be normalized! localBelief(i,val) = " + localBelief(varIdx, val);
-                setOutsideBelief(varIdx, val, vars[varIdx].sendMessage(val, beliefRep.pow(localBelief(varIdx, val), this.weight)));
+                double localB;
+                if (cp.getBpMode().isAsync()) {
+                    // Current local belief might not have been sent to the variable yet
+                    localB = prevLocalBelief(varIdx, val);
+                } else {
+                    localB = localBelief(varIdx, val);
+                }
+                assert localB <= beliefRep.one() && localB >= beliefRep.zero() : "c Should be normalized! localBelief(i,val) = " + localB;
+                setOutsideBelief(varIdx, val, vars[varIdx].sendMessage(val, beliefRep.pow(localB, this.weight)));
             }
             normalizeBelief(varIdx, this::outsideBelief, this::setOutsideBelief);
             if (cp.dampingMessages()) {
