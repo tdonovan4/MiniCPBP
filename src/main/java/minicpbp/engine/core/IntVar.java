@@ -18,6 +18,7 @@
 
 package minicpbp.engine.core;
 
+import minicpbp.util.Belief;
 import minicpbp.util.Procedure;
 import minicpbp.util.exception.InconsistencyException;
 
@@ -32,6 +33,11 @@ public interface IntVar {
      * @return the solver in which this variable was created
      */
     Solver getSolver();
+
+    /**
+     * @return the belief representation used
+     */
+    Belief beliefRep();
 
     /**
      * Asks that the closure is called whenever the domain
@@ -218,6 +224,15 @@ public interface IntVar {
     void resetMarginals();
 
     /**
+     * Manually compute the marginal of the specified value by taking the product of every messages inbound from constraints.
+     * In normal operation, this method should not be called because the messages are automatically sent and added to
+     * the running product by constraints.
+     *
+     * @param v the value whose marginal is to be computed
+     */
+    void computeMarginal(int v);
+
+    /**
      * Normalizes the marginals.
      *
      */
@@ -319,7 +334,25 @@ public interface IntVar {
      * @exception InconsistencyException
      *            is thrown if the value is not in the domain
      */
-    void receiveMessage(int v, double oldB, double newB);
+   default void receiveMessage(int v, double oldB, double newB) {
+       Belief beliefRep = beliefRep();
+       assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
+       assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
+       assert marginal(v) <= beliefRep.one() && marginal(v) >= beliefRep.zero() : "domain.marginal(v) = " + marginal(v);
+       if (newB == 0) {
+           // Avoids NaN if oldB is also 0
+           setMarginal(v, beliefRep.zero());
+       } else if (oldB == 0) {
+           // Recalculate from constraints
+           if (getSolver().getTraceBPMsgsFlag()) {
+               System.out.println("recomputing old marginal for " + this.getName() + "=" + v + " because old belief is 0");
+           }
+           computeMarginal(v);
+       } else {
+           // Normal case
+           setMarginal(v, beliefRep.multiply(marginal(v), beliefRep.divide(newB, oldB)));
+       }
+   }
 
     /**
      * @param b is True if the variable is a variable that can be branched on

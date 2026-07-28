@@ -53,6 +53,9 @@ public class IntVarViewOffset implements IntVar {
     }
 
     @Override
+    public Belief beliefRep() {return beliefRep; }
+
+    @Override
     public void whenBind(Procedure f) {
         x.whenBind(f);
     }
@@ -188,6 +191,8 @@ public class IntVarViewOffset implements IntVar {
         x.resetMarginals();
     }
 
+    public void computeMarginal(int v) { x.computeMarginal(v); }
+
     @Override
     public void normalizeMarginals() {
         x.normalizeMarginals();
@@ -255,14 +260,6 @@ public class IntVarViewOffset implements IntVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert x.marginal(v - o) <= beliefRep.one() && x.marginal(v - o) >= beliefRep.zero() : "x.marginal(v - o) = " + x.marginal(v - o);
         x.setMarginal(v - o, beliefRep.multiply(x.marginal(v - o), b));
-    }
-
-    @Override
-    public void receiveMessage(int v, double oldB, double newB) {
-        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
-        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
-        assert x.marginal(v - o) <= beliefRep.one() && x.marginal(v - o) >= beliefRep.zero() : "x.marginal(v - o) = " + x.marginal(v - o);
-        x.setMarginal(v - o, beliefRep.multiply(x.marginal(v - o), beliefRep.divide(newB, oldB)));
     }
 
     @Override

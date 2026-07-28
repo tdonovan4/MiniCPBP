@@ -61,6 +61,9 @@ public class BoolVarViewNot implements BoolVar {
     }
 
     @Override
+    public Belief beliefRep() { return beliefRep; }
+
+    @Override
     public void whenBind(Procedure f) {
         x.whenBind(f);
     }
@@ -197,6 +200,9 @@ public class BoolVarViewNot implements BoolVar {
     }
 
     @Override
+    public void computeMarginal(int v) { x.computeMarginal(v); }
+
+    @Override
     public void normalizeMarginals() {
         x.normalizeMarginals();
     }
@@ -263,14 +269,6 @@ public class BoolVarViewNot implements BoolVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert x.marginal(1-v) <= beliefRep.one() && x.marginal(1-v) >= beliefRep.zero() : "x.marginal(not v) = " + x.marginal(1-v);
         x.setMarginal(1-v, beliefRep.multiply(x.marginal(1-v), b));
-    }
-
-    @Override
-    public void receiveMessage(int v, double oldB, double newB) {
-        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
-        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
-        assert x.marginal(1-v) <= beliefRep.one() && x.marginal(1-v) >= beliefRep.zero() : "x.marginal(not v) = " + x.marginal(1-v);
-        x.setMarginal(1-v, beliefRep.multiply(x.marginal(1-v), beliefRep.divide(newB, oldB)));
     }
 
     @Override

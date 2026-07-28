@@ -104,6 +104,13 @@ public interface Constraint {
     void sendMessage(IntVar x);
 
     /**
+     * Resent the last sent message to x for the v value
+     * @param x variable
+     * @param v value
+     */
+    void resendMessage(IntVar x, int v);
+
+    /**
      * Updates its local belief (given the outside beliefs) and updates
      * the residuals of the messages to the variables in its scope.
      */

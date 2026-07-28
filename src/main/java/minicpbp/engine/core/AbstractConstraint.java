@@ -27,6 +27,7 @@ import minicpbp.util.ResidualPQ;
 
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Abstract class most of the constraints
@@ -308,6 +309,20 @@ public abstract class AbstractConstraint implements Constraint {
         }
     }
 
+    public void resendMessage(IntVar x, int v) {
+        for (int i = 0; i < vars.length; i++) {
+            // Identity comparison is used to identify the exact object
+            if (vars[i].getConcreteVar() == x.getConcreteVar()) {
+                if (cp.getBpMode().isAsync()) {
+                    vars[i].receiveMessage(v, beliefRep.pow(prevLocalBelief(i, v), this.weight));
+                } else {
+                    vars[i].receiveMessage(v, beliefRep.pow(localBelief(i, v), this.weight));
+                }
+                // Can't break because the variable can be present with one or multiple views
+            }
+        }
+    }
+
     public void updateVarsResiduals() {
         updateBelief();
         if (cp.getTraceBPMsgsFlag()) {
@@ -445,7 +460,7 @@ public abstract class AbstractConstraint implements Constraint {
 
     @Override
     public String getName() {
-        return this.name;
+        return this.name + hashCode();
     }
 
     @Override
@@ -485,8 +500,10 @@ public abstract class AbstractConstraint implements Constraint {
                     double prevLocalB = prevLocalBelief(varIdx, val);
                     assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
 
-                    vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
+                    // Must override mark local belief as up to date before sending the message because the variable might
+                    // need to recompute the variable
                     setPrevLocalBelief(varIdx, val, localBelief(varIdx, val));
+                    vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
                     if (wasLocalBeliefUpdated) {
                         // This outside belief was used to update the local belief, mark it as up to date
                         setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));

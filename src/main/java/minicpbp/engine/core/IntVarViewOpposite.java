@@ -46,6 +46,9 @@ public class IntVarViewOpposite implements IntVar {
     }
 
     @Override
+    public Belief beliefRep() { return beliefRep; }
+
+    @Override
     public void whenBind(Procedure f) {
         x.whenBind(f);
     }
@@ -182,6 +185,9 @@ public class IntVarViewOpposite implements IntVar {
     }
 
     @Override
+    public void computeMarginal(int v) { x.computeMarginal(v); }
+
+    @Override
     public void normalizeMarginals() {
         x.normalizeMarginals();
     }
@@ -248,14 +254,6 @@ public class IntVarViewOpposite implements IntVar {
         assert b <= beliefRep.one() && b >= beliefRep.zero() : "b = " + b;
         assert x.marginal(-v) <= beliefRep.one() && x.marginal(-v) >= beliefRep.zero() : "x.marginal(-v) = " + x.marginal(-v);
         x.setMarginal(-v, beliefRep.multiply(x.marginal(-v), b));
-    }
-
-    @Override
-    public void receiveMessage(int v, double oldB, double newB) {
-        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
-        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "b = " + newB;
-        assert x.marginal(-v) <= beliefRep.one() && x.marginal(-v) >= beliefRep.zero() : "x.marginal(-v) = " + x.marginal(-v);
-        x.setMarginal(-v, beliefRep.multiply(x.marginal(-v), beliefRep.divide(newB, oldB)));
     }
 
     @Override
