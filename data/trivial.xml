@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<instance format="XCSP3" type="CSP">
+
+    <variables>
+        <var id="a"> 1..4 </var>
+        <var id="b"> 1..4 </var>
+        <var id="c"> 1..4 </var>
+        <var id="d"> 1..4 </var>
+    </variables>
+
+    <constraints>
+
+        <!-- i. alldifferent(a, b, c) -->
+        <allDifferent>
+            a b c
+        </allDifferent>
+
+        <!-- ii. a + b + c + d = 7 -->
+        <sum>
+            <list> a b c d </list>
+            <condition> (eq,7) </condition>
+        </sum>
+
+        <!-- iii. c ≤ d -->
+        <intension id="le_c_d">
+            le(c,d)
+        </intension>
+
+    </constraints>
+
+</instance>

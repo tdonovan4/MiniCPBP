@@ -1,0 +1,14 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[10][10]"> 0..9 </array>
+  </variables>
+  <constraints>
+    <allDifferent>
+      <matrix> x[][] </matrix>
+    </allDifferent>
+    <instantiation class="clues">
+      <list> x[0][0] x[0][1] x[0][3] x[0][5] x[0][6] x[1][2] x[1][4] x[1][5] x[1][6] x[1][7] x[2][1] x[2][2] x[2][4] x[2][6] x[2][7] x[3][1] x[3][2] x[3][5] x[3][8] x[3][9] x[4][2] x[4][3] x[4][4] x[4][7] x[4][9] x[5][0] x[5][5] x[5][7] x[5][8] x[5][9] x[6][0] x[6][2] x[6][3] x[6][4] x[6][8] x[7][1] x[7][3] x[7][5] x[7][6] x[7][8] x[8][0] x[8][3] x[8][6] x[8][8] x[8][9] x[9][0] x[9][1] x[9][4] x[9][7] x[9][9] </list>
+      <values> 4 2 1 0 6 5 7 9 2 6 9 6 0 1 7 8 3 6 0 2 2 0 4 9 5 9 5 4 2 0 6 9 5 8 4 5 3 4 9 8 5 9 3 6 7 2 7 3 5 8 </values>
+    </instantiation>
+  </constraints>
+</instance>
