@@ -119,6 +119,7 @@ public class SolveXCSPFZN {
 	private double restartFactor = 1.5;
 	private boolean initImpact = false;
 	private boolean enumerateSolutions = false;
+	private double minResidual = 1e-20;
 
 	// TODO: unused fields, figure out if we want to keep them
 	private boolean damp = false;
@@ -138,6 +139,7 @@ public class SolveXCSPFZN {
 		minicp.setMaxIter(maxIter);
 		minicp.setBpMode(bpMode);
 		minicp.setRbpNorm(rbpNorm);
+		minicp.setMinResidual(minResidual);
 		// TODO: check if these should be commented out or removed
 //		minicp.setDamp(damp);
 //		minicp.setDampingFactor(dampingFactor);
@@ -365,6 +367,9 @@ public class SolveXCSPFZN {
 		Option variationThresholdOpt = Option.builder().longOpt("var-threshold").argName("variationThreshold").hasArg()
 				.desc("threshold on entropy's variation under to stop belief propagation").build();
 
+		Option minResidualOpt = Option.builder().longOpt("min-residual").argName("MIN RESIDUAL").hasArg()
+				.desc("threshold on the maximum residual to continue BP iterations").build();
+
 		Option initImpactOpt = Option.builder().longOpt("init-impact").hasArg(false).desc("initialize impact before search")
 				.build();
 
@@ -400,6 +405,7 @@ public class SolveXCSPFZN {
 		options.addOption(nbFailsCutofOpt);
 		options.addOption(restartFactorOpt);
 		options.addOption(variationThresholdOpt);
+		options.addOption(minResidualOpt);
 		options.addOption(initImpactOpt);
 		options.addOption(dynamicStopBPOpt);
 		options.addOption(traceNbIterOpt);
@@ -466,6 +472,9 @@ public class SolveXCSPFZN {
 
 		if(cmd.hasOption("var-threshold"))
 			variationThreshold = Double.parseDouble(cmd.getOptionValue("var-threshold"));
+
+		if(cmd.hasOption("min-residual"))
+			minResidual = Double.parseDouble(cmd.getOptionValue("min-residual"));
 
 		checkSolution = (cmd.hasOption("verify"));
 		damp = (cmd.hasOption("damp-messages"));

@@ -121,6 +121,12 @@ public interface Solver {
     void setRbpNorm(RbpNorm norm);
 
     /**
+     * Set the min residual to continue RBP iterations
+     * @param minResidual min residual
+     */
+    void setMinResidual(double minResidual);
+
+    /**
      * @return the constraint weighing scheme
      */
     ConstraintWeighingScheme getWeighingScheme();

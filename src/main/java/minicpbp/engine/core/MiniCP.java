@@ -98,6 +98,7 @@ public class MiniCP implements Solver {
     private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
     private boolean hasPropagatedAllMessages = false;
+    private double minResidual = 1e-20;
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -168,6 +169,10 @@ public class MiniCP implements Solver {
 
     public RbpNorm getRbpNorm() {
         return rbpNorm;
+    }
+
+    public void setMinResidual(double minResidual) {
+        this.minResidual = minResidual;
     }
 
     public ConstraintWeighingScheme getWeighingScheme() {
@@ -598,7 +603,7 @@ public class MiniCP implements Solver {
         } else {
             for (int i = 0; i < residualPQ.size(); i++) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
-                if (maxResidual.residual() < 1e-20) {
+                if (maxResidual.residual() < minResidual) {
                     break;
                 }
                 if (maxResidual instanceof ResidualPQ.VarToConstraintResidual) {
