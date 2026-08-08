@@ -186,7 +186,6 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		} else {
 			System.out.println("s UNSATISFIABLE");
 			System.out.println("c problem failed before initiating the search");
-			throw InconsistencyException.INCONSISTENCY;
 		}
 	}
 

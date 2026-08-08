@@ -15,6 +15,7 @@ import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
 import minicpbp.util.Procedure;
 import minicpbp.util.SolutionDistribution;
+import minicpbp.util.exception.InconsistencyException;
 import model.ModelFormatFrontend;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -147,61 +148,76 @@ public class SolveXCSPFZN {
 //      minicp.setTraceNbIterFlag(traceNbIter);
 //		minicp.setVariationThreshold(variationThreshold);
 
+		Runnable earlyReturnSummary = () -> {
+			SearchStatistics stats = new SearchStatistics();
+			stats.setCompleted();
+			frontend.onNoSolutionFound(stats);
+			frontend.printStats(stats, statsFileStr, 0L);
+		};
+
 		if (frontend.hasFailed()) {
 			frontend.onPreInitFail();
+			earlyReturnSummary.run();
+			return;
 		}
 		frontend.initModel();
 
 		IntVar[] decisionsVars = frontend.getDecisionVars();
 		Search search = null;
-		switch (heuristic) {
-			case FFRV:
-				minicp.setMode(Solver.PropaMode.SP);
-				search = makeSearch(firstFailRandomVal(decisionsVars));
-				break;
-			case MXMS:
-				search = makeSearch(maxMarginalStrength(decisionsVars));
-				break;
-			case MXM:
-				search = makeSearch(maxMarginal(decisionsVars));
-				break;
-			case MNMS:
-				search = makeSearch(minMarginalStrength(decisionsVars));
-				break;
-			case MNM:
-				search = makeSearch(minMarginal(decisionsVars));
-				break;
-			case MNE:
-				search = makeSearch(minEntropy(decisionsVars));
-				break;
-			case IE:
-				search = makeSearch(impactEntropy(decisionsVars));
-				if (initImpact)
-					search.initializeImpact(decisionsVars);
-				break;
-			case IBS:
-				minicp.setMode(Solver.PropaMode.SP);
-				search = makeSearch(impactBasedSearch(decisionsVars));
-				// Optional initialisation of impacts
-				search.initializeImpactDomains(decisionsVars);
-				nbFailCutof = nbFailCutof * decisionsVars.length;
-				break;
-			case MIE:
-				search = makeDfs(minicp, minEntropyRegisterImpact(decisionsVars), impactEntropy(decisionsVars));
-				if (initImpact)
-					search.initializeImpact(decisionsVars);
-				break;
-			case MNEBW:
-				search = makeSearch(minEntropyBiasedWheelSelectVal(decisionsVars));
-				break;
-			case WDEG:
-				minicp.setMode(Solver.PropaMode.SP);
-				search = makeSearch(domWdeg(decisionsVars));
-				nbFailCutof = nbFailCutof * decisionsVars.length;
-				break;
-			default:
-				System.out.println("unknown search strategy");
-				System.exit(1);
+		try {
+			switch (heuristic) {
+				case FFRV:
+					minicp.setMode(Solver.PropaMode.SP);
+					search = makeSearch(firstFailRandomVal(decisionsVars));
+					break;
+				case MXMS:
+					search = makeSearch(maxMarginalStrength(decisionsVars));
+					break;
+				case MXM:
+					search = makeSearch(maxMarginal(decisionsVars));
+					break;
+				case MNMS:
+					search = makeSearch(minMarginalStrength(decisionsVars));
+					break;
+				case MNM:
+					search = makeSearch(minMarginal(decisionsVars));
+					break;
+				case MNE:
+					search = makeSearch(minEntropy(decisionsVars));
+					break;
+				case IE:
+					search = makeSearch(impactEntropy(decisionsVars));
+					if (initImpact)
+						search.initializeImpact(decisionsVars);
+					break;
+				case IBS:
+					minicp.setMode(Solver.PropaMode.SP);
+					search = makeSearch(impactBasedSearch(decisionsVars));
+					// Optional initialisation of impacts
+					search.initializeImpactDomains(decisionsVars);
+					nbFailCutof = nbFailCutof * decisionsVars.length;
+					break;
+				case MIE:
+					search = makeDfs(minicp, minEntropyRegisterImpact(decisionsVars), impactEntropy(decisionsVars));
+					if (initImpact)
+						search.initializeImpact(decisionsVars);
+					break;
+				case MNEBW:
+					search = makeSearch(minEntropyBiasedWheelSelectVal(decisionsVars));
+					break;
+				case WDEG:
+					minicp.setMode(Solver.PropaMode.SP);
+					search = makeSearch(domWdeg(decisionsVars));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
+					break;
+				default:
+					System.out.println("unknown search strategy");
+					System.exit(1);
+			}
+		} catch (InconsistencyException ignored) {
+			// Do we consider this a pre init fail
+			earlyReturnSummary.run();
+			return;
 		}
 
 		boolean extractSolutionStr = checkSolution || (!Objects.equals(solFileStr, ""));
