@@ -350,5 +350,7 @@ public interface Solver {
      * @return the priority queue
      */
     ResidualPQ getResidualPQ();
+
+    void consumeRbpBudget(int amount);
 }
 

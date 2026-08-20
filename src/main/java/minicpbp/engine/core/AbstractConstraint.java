@@ -328,6 +328,7 @@ public abstract class AbstractConstraint implements Constraint {
         if (cp.getTraceBPMsgsFlag()) {
             System.out.println("Recomputing local belief and updating outbound messages");
         }
+        int budgetUsage = 0;
         for (int i = 0; i < vars.length; i++) {
             if (!vars[i].isBound()) {
                 normalizeBelief(i, this::localBelief, this::setLocalBelief);
@@ -358,8 +359,12 @@ public abstract class AbstractConstraint implements Constraint {
                 }
                 // Mark the message to the variable as outdated
                 cp.getResidualPQ().setResidual(this, vars[i], outboundResidual);
+                // Updated x->c edge value and/or c->x edge residual
+                budgetUsage += 1;
             }
         }
+        // Decrease budget even if all variables are bound to avoid potential infinite loop
+        cp.consumeRbpBudget(Math.max(budgetUsage, 1));
     }
 
 
@@ -512,6 +517,8 @@ public abstract class AbstractConstraint implements Constraint {
             }
 
             if (cp.getBpMode().isAsync()) {
+                // Updated c->x edge value
+                cp.consumeRbpBudget(1);
                 vars[varIdx].normalizeMarginals();
                 outboundPropagationCount[varIdx]++;
                 cp.getResidualPQ().setResidual(this, vars[varIdx], 0);
@@ -533,6 +540,8 @@ public abstract class AbstractConstraint implements Constraint {
                     if (c.isActive() && c != this) {
                         // Index might be different so pass object instead
                         c.receiveMessage(vars[varIdx]);
+                        // Updated x->c edge residual
+                        cp.consumeRbpBudget(1);
                     }
                 }
             }

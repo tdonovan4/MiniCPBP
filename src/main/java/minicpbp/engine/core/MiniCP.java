@@ -99,6 +99,7 @@ public class MiniCP implements Solver {
     private final ResidualPQ residualPQ = new ResidualPQ();
     private boolean hasPropagatedAllMessages = false;
     private double minResidual = 1e-20;
+    private int rbpBudget;
 
     public MiniCP(StateManager sm) {
         this.sm = sm;
@@ -601,7 +602,8 @@ public class MiniCP implements Solver {
             }
             hasPropagatedAllMessages = true;
         } else {
-            for (int i = 0; i < residualPQ.size(); i++) {
+            rbpBudget = residualPQ.size();
+            while (rbpBudget > 0) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
                 if (maxResidual.residual() < minResidual) {
                     break;
@@ -880,7 +882,11 @@ public class MiniCP implements Solver {
             this.post(L);
         }
         return paramVars;
-    }	    
+    }
+
+    public void consumeRbpBudget(int amount) {
+        rbpBudget -= amount;
+    }
 
     private LinkedList<Integer> accurateFactorization(double intNum, double exactNum, double accuracy, int m, int p) {
 	    if (intNum <= 1.0)
