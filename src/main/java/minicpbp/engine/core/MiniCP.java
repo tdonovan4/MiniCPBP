@@ -374,7 +374,10 @@ public class MiniCP implements Solver {
 //                    System.out.print(variables.get(i).getName());
 //                    System.out.println(variables.get(i).toString());
 //                }
-                BPiteration();
+                boolean shouldContinue = BPiteration();
+                if (!shouldContinue)
+                    break;
+
                 if (traceBP) {
                     System.out.println("##### after BP iteration " + iter + " #####");
                     for (int i = 0; i < variables.size(); i++) {
@@ -456,7 +459,10 @@ public class MiniCP implements Solver {
                 }
             }
             for (int iter = 1; iter <= nbIterations; iter++) {
-                BPiteration();
+                boolean shouldContinue = BPiteration();
+                if (!shouldContinue)
+                    break;
+
                 if (traceBP) {
                     System.out.println("##### after BP iteration " + iter + " #####");
                     for (int i = 0; i < variables.size(); i++) {
@@ -528,7 +534,10 @@ public class MiniCP implements Solver {
             dampingFactorDetermined = true;
             // BP dive
             for (int iter = 1; iter <= beliefPropaMaxIter; iter++) {
-                BPiteration();
+                boolean shouldContinue = BPiteration();
+                if (!shouldContinue)
+                    break;
+
                 previousEntropy = currentEntropy;
                 previousDeltaEntropy = currentDeltaEntropy;
                 currentEntropy = problemEntropy();
@@ -567,8 +576,10 @@ public class MiniCP implements Solver {
     /**
      * a single iteration of Belief Propagation:
      * from variables to constraints, and then from constraints to variables
+     *
+     * @return boolean indicating if the iterations should be continued
      */
-    private void BPiteration() {
+    private boolean BPiteration() {
         if (!bpMode.isAsync()) {
             Constraint c;
             Iterator<Constraint> iteratorC = constraints.iterator();
@@ -606,7 +617,7 @@ public class MiniCP implements Solver {
             while (rbpBudget > 0) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
                 if (maxResidual.residual() < minResidual) {
-                    break;
+                    return false;
                 }
                 if (maxResidual instanceof ResidualPQ.VarToConstraintResidual) {
                     ResidualPQ.VarToConstraintResidual maxResidualXToC = (ResidualPQ.VarToConstraintResidual) maxResidual;
@@ -628,6 +639,7 @@ public class MiniCP implements Solver {
                 iterator.next().normalizeMarginals();
             }
         }
+        return true;
     }
 
     /**
