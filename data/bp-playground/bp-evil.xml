@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[3]"> 0..2 </array>
+  </variables>
+  <constraints>
+    <extension>
+      <list> x[] </list>
+      <supports> (0,0,0)(1,1,1)(1,2,2)(2,2,1)(2,1,2) </supports>
+    </extension>
+    <extension>
+      <list> x[] </list>
+      <supports> (0,0,0)(1,2,1)(1,1,2)(2,1,1)(2,2,2) </supports>
+    </extension>
+  </constraints>
+</instance>
