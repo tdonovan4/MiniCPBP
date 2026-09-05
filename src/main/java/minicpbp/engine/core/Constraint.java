@@ -94,7 +94,10 @@ public interface Constraint {
      * Updates its local belief (given the outside beliefs) and sends it 
      * as messages to the variables in its scope.
      */
-    void sendMessages();
+    void sendMessages(boolean updateBelief);
+    default void sendMessages() {
+        sendMessages(true);
+    }
 
     /**
      * Send the current local belief for x to the x variable.
@@ -109,6 +112,15 @@ public interface Constraint {
      * @param v value
      */
     void resendMessage(IntVar x, int v);
+
+    /**
+     * Updates its local belief given the outside beliefs.
+     * To be defined in the actual constraint.
+     * <p>
+     * Default behaviour: uniform belief
+     * CAVEAT: may set zero/one beliefs but should not directly remove domain values (only done in sendMessages() if actOnZeroOneBelief flag is set)
+     */
+    void updateBelief();
 
     /**
      * Updates its local belief (given the outside beliefs) and updates

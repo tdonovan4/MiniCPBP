@@ -263,6 +263,7 @@ public abstract class AbstractConstraint implements Constraint {
     public void resetPropagationCounts() {
         this.inboundPropagationCount = new int[vars.length];
         this.outboundPropagationCount = new int[vars.length];
+        Arrays.fill(inboundPropagationCount, 1);
     }
 
     private void dampenMessages(int i) {
@@ -292,10 +293,12 @@ public abstract class AbstractConstraint implements Constraint {
         }
     }
 
-    public void sendMessages() {
-        updateBelief();
+    public void sendMessages(boolean updateBelief) {
+        if (updateBelief) {
+            updateBelief();
+        }
         for (int i = 0; i < vars.length; i++) {
-            sendMessage(i, true);
+            sendMessage(i, updateBelief);
         }
     }
 
@@ -412,7 +415,7 @@ public abstract class AbstractConstraint implements Constraint {
        * Default behaviour: uniform belief
        * CAVEAT: may set zero/one beliefs but should not directly remove domain values (only done in sendMessages() if actOnZeroOneBelief flag is set)
        */
-    protected void updateBelief() {
+    public void updateBelief() {
         if (!updateBeliefWarningPrinted) {
             if (getName() != null) // do not print warning for unnamed constraint
                 System.out.println("c Warning: method updateBelief not implemented yet for " + getName() + " constraint. Using uniform belief instead.");
@@ -505,7 +508,7 @@ public abstract class AbstractConstraint implements Constraint {
                     double prevLocalB = prevLocalBelief(varIdx, val);
                     assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
 
-                    // Must override mark local belief as up to date before sending the message because the variable might
+                    // Must mark local belief as up to date before sending the message because the variable might
                     // need to recompute the variable
                     setPrevLocalBelief(varIdx, val, localBelief(varIdx, val));
                     vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));

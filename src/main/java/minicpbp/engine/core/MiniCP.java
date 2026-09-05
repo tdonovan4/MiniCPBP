@@ -602,13 +602,28 @@ public class MiniCP implements Solver {
             while (iterator.hasNext()) {
                 iterator.next().normalizeMarginals();
             }
-        } else if (!hasPropagatedAllMessages || bpMode == BpMode.ABP) {
+        } else if (!hasPropagatedAllMessages) {
+            // Compute all constraint-to-variable message synchronously once before starting RBP.
+
+            // Because Constraint.sendMessages calls Constraint.receiveMessage for affected constraints in order to
+            // compute the variable-to-constraint residuals, and thus their localBeliefs will be updated. This means
+            // that the following calls to Constraint.sendMessages (of the remaining constraints) will already be using
+            // the updated values.
+            //
+            // To prevent this and keep the first iteration sync, we update all beliefs first and then send.
             Iterator<Constraint> iteratorC = constraints.iterator();
-            Constraint c;
             while (iteratorC.hasNext()) {
-                c = iteratorC.next();
+                Constraint c = iteratorC.next();
                 if (c.isActive()) {
-                    c.sendMessages();
+                    c.updateBelief();
+                }
+            }
+
+            iteratorC = constraints.iterator();
+            while (iteratorC.hasNext()) {
+                Constraint c = iteratorC.next();
+                if (c.isActive()) {
+                    c.sendMessages(false);
                 }
             }
             hasPropagatedAllMessages = true;

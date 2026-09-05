@@ -42,12 +42,11 @@ public interface Solver {
 
     enum BpMode {
         Standard,
-        ABP,
         RBP,
         WDBP;
 
         boolean isAsync() {
-            return this == ABP || this == RBP || this == WDBP;
+            return this == RBP || this == WDBP;
         }
     }
 
