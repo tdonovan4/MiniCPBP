@@ -605,14 +605,39 @@ public class MiniCP implements Solver {
         } else if (!hasPropagatedAllMessages || bpMode == BpMode.ABP) {
             Iterator<Constraint> iteratorC = constraints.iterator();
             Constraint c;
+            // We send constraint-to-variable messages and then variable-to-constraint messages, which is the opposite
+            // order to a regular synchronous BP iteration. This is because the first c.receiveMessages() after init
+            // is useless, so it is omitted. Instead, we call c.receiveMessages() after to update the residuals updated
+            // by the calls to c.sendMessages in sync mode.
+            //
+            // We execute sendMessages in sync mode to avoid updating affected constraints' residuals after every
+            // sendMessages. Since we are updating all constraints, it is more efficient to call receiveMessages at the
+            // end once for every constraint.
+            BpMode originalBpMpde = bpMode;
+            bpMode = BpMode.Standard;
             while (iteratorC.hasNext()) {
                 c = iteratorC.next();
                 if (c.isActive()) {
                     c.sendMessages();
                 }
             }
+            bpMode = originalBpMpde;
+
+            Iterator<IntVar> iterator = variables.iterator();
+            while (iterator.hasNext()) {
+                iterator.next().normalizeMarginals();
+            }
+
+            iteratorC = constraints.iterator();
+            while (iteratorC.hasNext()) {
+                c = iteratorC.next();
+                if (c.isActive()) {
+                    c.receiveMessages();
+                }
+            }
             hasPropagatedAllMessages = true;
         } else {
+            // FIXME: second iter will be smaller since constraint-to-variable messages will be missing
             rbpBudget = residualPQ.size();
             while (rbpBudget > 0) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();

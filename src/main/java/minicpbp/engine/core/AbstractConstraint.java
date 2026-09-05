@@ -263,6 +263,9 @@ public abstract class AbstractConstraint implements Constraint {
     public void resetPropagationCounts() {
         this.inboundPropagationCount = new int[vars.length];
         this.outboundPropagationCount = new int[vars.length];
+        // Start at 1 to account for the first iteration which propagate messages
+        Arrays.fill(inboundPropagationCount, 1);
+        Arrays.fill(outboundPropagationCount, 1);
     }
 
     private void dampenMessages(int i) {
