@@ -101,7 +101,7 @@ public interface Constraint {
      * Warning: unlike sendMessages, the local belief is not updated
      * @param x Updated variable
      */
-    void sendMessage(IntVar x);
+    void sendMessageAndUpdateResiduals(IntVar x);
 
     /**
      * Resent the last sent message to x for the v value

@@ -374,7 +374,7 @@ public class MiniCP implements Solver {
 //                    System.out.print(variables.get(i).getName());
 //                    System.out.println(variables.get(i).toString());
 //                }
-                boolean shouldContinue = BPiteration();
+                boolean shouldContinue = BPiteration(iter);
                 if (!shouldContinue)
                     break;
 
@@ -459,7 +459,7 @@ public class MiniCP implements Solver {
                 }
             }
             for (int iter = 1; iter <= nbIterations; iter++) {
-                boolean shouldContinue = BPiteration();
+                boolean shouldContinue = BPiteration(iter);
                 if (!shouldContinue)
                     break;
 
@@ -534,7 +534,7 @@ public class MiniCP implements Solver {
             dampingFactorDetermined = true;
             // BP dive
             for (int iter = 1; iter <= beliefPropaMaxIter; iter++) {
-                boolean shouldContinue = BPiteration();
+                boolean shouldContinue = BPiteration(iter);
                 if (!shouldContinue)
                     break;
 
@@ -577,9 +577,10 @@ public class MiniCP implements Solver {
      * a single iteration of Belief Propagation:
      * from variables to constraints, and then from constraints to variables
      *
+     * @param iterNum indicate which iteration this is (start at 1)
      * @return boolean indicating if the iterations should be continued
      */
-    private boolean BPiteration() {
+    private boolean BPiteration(int iterNum) {
         if (!bpMode.isAsync()) {
             Constraint c;
             Iterator<Constraint> iteratorC = constraints.iterator();
@@ -608,20 +609,13 @@ public class MiniCP implements Solver {
             // We send constraint-to-variable messages and then variable-to-constraint messages, which is the opposite
             // order to a regular synchronous BP iteration. This is because the first c.receiveMessages() after init
             // is useless, so it is omitted. Instead, we call c.receiveMessages() after to update the residuals updated
-            // by the calls to c.sendMessages in sync mode.
-            //
-            // We execute sendMessages in sync mode to avoid updating affected constraints' residuals after every
-            // sendMessages. Since we are updating all constraints, it is more efficient to call receiveMessages at the
-            // end once for every constraint.
-            BpMode originalBpMpde = bpMode;
-            bpMode = BpMode.Standard;
+            // by the calls to c.sendMessages.
             while (iteratorC.hasNext()) {
                 c = iteratorC.next();
                 if (c.isActive()) {
                     c.sendMessages();
                 }
             }
-            bpMode = originalBpMpde;
 
             Iterator<IntVar> iterator = variables.iterator();
             while (iterator.hasNext()) {
@@ -637,8 +631,12 @@ public class MiniCP implements Solver {
             }
             hasPropagatedAllMessages = true;
         } else {
-            // FIXME: second iter will be smaller since constraint-to-variable messages will be missing
             rbpBudget = residualPQ.size();
+//            if (iterNum == 2 && rbpBudget > 100) {
+//                rbpBudget /= 2;
+//            } else if (iterNum == 3 && rbpBudget > 100) {
+//                rbpBudget = rbpBudget * 3 / 4;
+//            }
             while (rbpBudget > 0) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
                 if (maxResidual.residual() < minResidual) {
@@ -655,7 +653,7 @@ public class MiniCP implements Solver {
                     if (traceBPMsgs) {
                         System.out.println("maxResidual: " + maxResidualCToX.from().getName() + "->" + maxResidualCToX.to().getName() + "=" + maxResidualCToX.residual());
                     }
-                    maxResidualCToX.from().sendMessage(maxResidualCToX.to());
+                    maxResidualCToX.from().sendMessageAndUpdateResiduals(maxResidualCToX.to());
                 }
             }
 

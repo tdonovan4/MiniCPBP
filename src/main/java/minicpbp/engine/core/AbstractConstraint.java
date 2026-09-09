@@ -246,7 +246,7 @@ public abstract class AbstractConstraint implements Constraint {
             double uniform = beliefRep.divide(beliefRep.one(),(double) s);
             for (int j = 0; j < s; j++) {
                 setLocalBelief(i, domainValues[j], uniform);
-                setPrevLocalBelief(i, domainValues[j], uniform);
+                setPrevLocalBelief(i, domainValues[j], beliefRep.one());
             }
         }
     }
@@ -265,7 +265,6 @@ public abstract class AbstractConstraint implements Constraint {
         this.outboundPropagationCount = new int[vars.length];
         // Start at 1 to account for the first iteration which propagate messages
         Arrays.fill(inboundPropagationCount, 1);
-        Arrays.fill(outboundPropagationCount, 1);
     }
 
     private void dampenMessages(int i) {
@@ -298,15 +297,16 @@ public abstract class AbstractConstraint implements Constraint {
     public void sendMessages() {
         updateBelief();
         for (int i = 0; i < vars.length; i++) {
-            sendMessage(i, true);
+            sendMessage(i, false);
         }
     }
 
-    public void sendMessage(IntVar x) {
+    public void sendMessageAndUpdateResiduals(IntVar x) {
         for (int i = 0; i < vars.length; i++) {
             // Identity comparison is used to identify the exact object
             if (vars[i] == x) {
                 sendMessage(i, false);
+                notifyAffectedConstraints(i);
                 break;
             }
         }
@@ -508,14 +508,12 @@ public abstract class AbstractConstraint implements Constraint {
                     double prevLocalB = prevLocalBelief(varIdx, val);
                     assert prevLocalB <= beliefRep.one() && prevLocalB >= beliefRep.zero() : "c Should be normalized! prevLocalB = " + prevLocalB;
 
-                    // Must override mark local belief as up to date before sending the message because the variable might
+                    // Must mark local belief as up to date before sending the message because the variable might
                     // need to recompute the variable
-                    setPrevLocalBelief(varIdx, val, localBelief(varIdx, val));
-                    vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
-                    if (wasLocalBeliefUpdated) {
-                        // This outside belief was used to update the local belief, mark it as up to date
-                        setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));
+                    if (!wasLocalBeliefUpdated) {
+                        setPrevLocalBelief(varIdx, val, localBelief(varIdx, val));
                     }
+                    vars[varIdx].receiveMessage(val, beliefRep.pow(prevLocalB, this.weight), beliefRep.pow(localB, this.weight));
                 }
             }
 
@@ -524,29 +522,28 @@ public abstract class AbstractConstraint implements Constraint {
                 cp.consumeRbpBudget(1);
                 vars[varIdx].normalizeMarginals();
                 outboundPropagationCount[varIdx]++;
-                cp.getResidualPQ().setResidual(this, vars[varIdx], 0);
+                if (!wasLocalBeliefUpdated) {
+                    cp.getResidualPQ().setResidual(this, vars[varIdx], 0);
+                }
                 if (cp.getTraceBPMsgsFlag()) {
                     System.out.println("  Marginal :" + vars[varIdx]);
                 }
-                if (wasLocalBeliefUpdated) {
-                    Double inboundResidual = cp.getResidualPQ().getResidual(vars[varIdx], this);
-                    if (inboundResidual == null || inboundResidual > 0) {
-                        // Since the updated outside belief was used, we can mark the message from the variable as up to date
-                        cp.getResidualPQ().setResidual(vars[varIdx], this, 0);
-                        // Should we only increment the message with the max residual instead?
-                        inboundPropagationCount[varIdx]++;
-                    }
-                }
-                // Notify other constraints of this update
-                for (Iterator<Constraint> it = vars[varIdx].constraints(); it.hasNext(); ) {
-                    Constraint c = it.next();
-                    if (c.isActive() && c != this) {
-                        // Index might be different so pass object instead
-                        c.receiveMessage(vars[varIdx]);
-                        // Updated x->c edge residual
-                        cp.consumeRbpBudget(1);
-                    }
-                }
+            }
+        }
+    }
+
+    /**
+     * Send updated variable-to-constraint messages to the other constraints of the given variable
+     * @param varIdx index of the updated variable
+     */
+    private void notifyAffectedConstraints(int varIdx) {
+        for (Iterator<Constraint> it = vars[varIdx].constraints(); it.hasNext(); ) {
+            Constraint c = it.next();
+            if (c.isActive() && c != this) {
+                // Index might be different so pass object instead
+                c.receiveMessage(vars[varIdx]);
+                // Updated x->c edge residual
+                cp.consumeRbpBudget(1);
             }
         }
     }
