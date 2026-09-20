@@ -121,6 +121,7 @@ public class SolveXCSPFZN {
 	private boolean initImpact = false;
 	private boolean enumerateSolutions = false;
 	private double minResidual = 1e-20;
+	private boolean enableBpStats = false;
 
 	// TODO: unused fields, figure out if we want to keep them
 	private boolean damp = false;
@@ -141,6 +142,9 @@ public class SolveXCSPFZN {
 		minicp.setBpMode(bpMode);
 		minicp.setRbpNorm(rbpNorm);
 		minicp.setMinResidual(minResidual);
+		if (enableBpStats) {
+			minicp.enableBpStats();
+		}
 		// TODO: check if these should be commented out or removed
 //		minicp.setDamp(damp);
 //		minicp.setDampingFactor(dampingFactor);
@@ -401,6 +405,9 @@ public class SolveXCSPFZN {
 		Option enumerateSolutionsOpt = Option.builder().longOpt("enumerate-solutions").hasArg(false).desc("search for all solutions and print true marginals (only for CSPs)")
 				.build();
 
+		Option enableBpStatsOpt = Option.builder().longOpt("bp-stats").hasArg(false)
+				.desc("enable BP stats").build();
+
 		Options options = new Options();
 		options.addOption(xcspFileOpt);
 		options.addOption(branchingOpt);
@@ -427,6 +434,7 @@ public class SolveXCSPFZN {
 		options.addOption(traceNbIterOpt);
 		options.addOption(traceEntropyOpt);
 		options.addOption(enumerateSolutionsOpt);
+		options.addOption(enableBpStatsOpt);
 
 		CommandLineParser parser = new DefaultParser();
 		CommandLine cmd = null;
@@ -504,6 +512,8 @@ public class SolveXCSPFZN {
 		traceSearch = (cmd.hasOption("trace-search"));
 		traceNbIter = (cmd.hasOption("trace-iter"));
 		traceEntropy = (cmd.hasOption("trace-entropy"));
+
+		enableBpStats = (cmd.hasOption("bp-stats"));
 	}
 
 	public static void main(String[] args) {

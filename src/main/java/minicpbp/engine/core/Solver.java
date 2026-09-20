@@ -21,10 +21,12 @@ package minicpbp.engine.core;
 import minicpbp.search.Objective;
 import minicpbp.state.StateManager;
 import minicpbp.state.StateStack;
+import minicpbp.util.BpStats;
 import minicpbp.util.Procedure;
 import minicpbp.util.Belief;
 import minicpbp.util.ResidualPQ;
 
+import java.util.Optional;
 import java.util.Random;
 
 public interface Solver {
@@ -156,6 +158,12 @@ public interface Solver {
      */
     void setTraceEntropyFlag(boolean traceEntropy);
 
+
+    /**
+     * Enables the recording and displaying of belief propagation stats
+     */
+    void enableBpStats();
+
     /**
      * Set the maximal number of BP iterations before each branching
      * @param maxIter the maximal number of BP iterations
@@ -253,6 +261,13 @@ public interface Solver {
      * @return the belief representation
      */
     Belief getBeliefRep();
+
+    /**
+     * Returns the belief propagation stats if they were enabled
+     *
+     * @return belief propagation stats
+     */
+    Optional<BpStats> getBpStats();
 
     /**
      * Adds a listener called whenever we start fixPoint.

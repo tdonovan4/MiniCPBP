@@ -94,6 +94,9 @@ public class MiniCP implements Solver {
     private long trigger = 0;
     private long potentialTrigger = 0;
 
+    // for BP
+    private BpStats bpStats;
+
     // for RBP
     private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
@@ -142,6 +145,12 @@ public class MiniCP implements Solver {
     public Belief getBeliefRep() {
         return beliefRep;
     }
+
+    @Override
+    public void enableBpStats() { bpStats = new BpStats(); }
+
+    @Override
+    public Optional<BpStats> getBpStats() { return Optional.ofNullable(bpStats); }
 
     @Override
     public void registerVar(IntVar x) {

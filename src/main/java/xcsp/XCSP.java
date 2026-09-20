@@ -2138,6 +2138,10 @@ public class XCSP extends ModelFormatFrontend implements XCallbacks2 {
 		out.println("nodes: " + stats.numberOfNodes());
 		out.println("runtime (ms): " + runtime);
 
+		if (minicp.getBpStats().isPresent()) {
+			out.println(minicp.getBpStats().get());
+		}
+
 		out.close();
 
 	}

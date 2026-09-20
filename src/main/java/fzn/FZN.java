@@ -125,6 +125,10 @@ public class FZN extends ModelFormatFrontend {
 			out.println("nodes: " + stats.numberOfNodes());
 			out.println("runtime (ms): " + runtime);
 
+			if (minicp.getBpStats().isPresent()) {
+				out.println(minicp.getBpStats().get());
+			}
+
 			out.close();
 		}
 

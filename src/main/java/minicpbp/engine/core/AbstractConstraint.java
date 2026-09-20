@@ -27,7 +27,6 @@ import minicpbp.util.ResidualPQ;
 
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
 /**
  * Abstract class most of the constraints
@@ -295,6 +294,7 @@ public abstract class AbstractConstraint implements Constraint {
     }
 
     public void sendMessages() {
+        recordPreUpdateBeliefStats();
         updateBelief();
         for (int i = 0; i < vars.length; i++) {
             sendMessage(i, false);
@@ -327,6 +327,7 @@ public abstract class AbstractConstraint implements Constraint {
     }
 
     public void updateVarsResiduals() {
+        recordPreUpdateBeliefStats();
         updateBelief();
         if (cp.getTraceBPMsgsFlag()) {
             System.out.println("Recomputing local belief and updating outbound messages");
@@ -356,12 +357,12 @@ public abstract class AbstractConstraint implements Constraint {
                 Double inboundResidual = residualPQ.getResidual(vars[i], this);
                 if (inboundResidual == null || inboundResidual > 0) {
                     // Since the updated outside belief was used, we can mark the message from the variable as up to date
-                    cp.getResidualPQ().setResidual(vars[i], this, 0);
+                    residualPQ.setResidual(vars[i], this, 0);
                     // Should we only increment the message with the max residual instead?
                     inboundPropagationCount[i]++;
                 }
                 // Mark the message to the variable as outdated
-                cp.getResidualPQ().setResidual(this, vars[i], outboundResidual);
+                residualPQ.setResidual(this, vars[i], outboundResidual);
                 // Updated x->c edge value and/or c->x edge residual
                 budgetUsage += 1;
             }
@@ -392,6 +393,7 @@ public abstract class AbstractConstraint implements Constraint {
             System.out.println("*** Warning! Infinite loss; mitigating by producing some very large gradients ***");
             wc = 1.0E-10;
         }
+        recordPreUpdateBeliefStats();
         updateBelief();
         for (int i = 0; i < vars.length; i++) {
             System.out.println("* "+vars[i].getName());
@@ -633,6 +635,38 @@ public abstract class AbstractConstraint implements Constraint {
             return residual / propagationCount;
         } else {
             return residual;
+        }
+    }
+
+    private void recordPreUpdateBeliefStats() {
+        if (!cp.getBpStats().isPresent()) {
+            return;
+        }
+
+        int newIncomingMsgsUsed = 0;
+        int unpropagatedOutgoingMsgs = 0;
+        int freeVars = 0;
+
+        ResidualPQ residualPQ = cp.getResidualPQ();
+
+        for (IntVar var : vars) {
+            if (!var.isBound()) {
+                freeVars += 1;
+
+                Double inboundResidual = residualPQ.getResidual(var, this);
+                Double outboundResidual = residualPQ.getResidual(this, var);
+
+                if (inboundResidual == null || inboundResidual > 0) {
+                    newIncomingMsgsUsed += 1;
+                }
+                if (outboundResidual != null && Double.isFinite(outboundResidual) && outboundResidual > 0) {
+                    unpropagatedOutgoingMsgs += 1;
+                }
+            }
+        }
+
+        if (freeVars > 0) {
+            cp.getBpStats().get().recordLocalBeliefUpdate(newIncomingMsgsUsed, unpropagatedOutgoingMsgs, freeVars);
         }
     }
 }
