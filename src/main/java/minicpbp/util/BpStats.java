@@ -80,21 +80,30 @@ public class BpStats {
     }
 
     /**
-     * Computes the average effective arity at the time of local belief updates, across all constraints.
+     * The average effective arity at the time of local belief updates, across all constraints.
      * @return the average effective arity per update
      */
     public double avgEffectiveArity() {
         return (double) freeVarsSum / numLocalBeliefUpdates;
     }
 
+    /**
+     * The number of local belief updates, across all constraints.
+     * @return the number of local belief updates
+     */
+    public int numLocalBeliefUpdates() {
+        return numLocalBeliefUpdates;
+    }
+
     @Override
     public String toString() {
-        return "BP stats\n" +
-                "avgNewIncomingVarMsgs: " + avgNewIncomingVarMsgs() + "\n" +
-                "avgIncomingVarMsgsUsageEfficiency: " + avgIncomingVarMsgsUsageEfficiency() + "\n" +
-                "avgUnpropagatedOutgoingConMsgs: " + avgUnpropagatedOutgoingConMsgs() + "\n" +
-                "avgOutgoingConMsgsPropagationEfficiency: " + avgOutgoingConMsgsPropagationEfficiency() + "\n" +
-                "numUnpropagatedLocalBeliefUpdates: " + numUnpropagatedLocalBeliefUpdates() + "\n" +
-                "avgEffectiveArity: " + avgEffectiveArity();
+        return "BP stats:\n" +
+                "  avgNewIncomingVarMsgs: " + avgNewIncomingVarMsgs() + "\n" +
+                "  avgIncomingVarMsgsUsageEfficiency: " + avgIncomingVarMsgsUsageEfficiency() + "\n" +
+                "  avgUnpropagatedOutgoingConMsgs: " + avgUnpropagatedOutgoingConMsgs() + "\n" +
+                "  avgOutgoingConMsgsPropagationEfficiency: " + avgOutgoingConMsgsPropagationEfficiency() + "\n" +
+                "  avgEffectiveArity: " + avgEffectiveArity() + "\n" +
+                "  numUnpropagatedLocalBeliefUpdates: " + numUnpropagatedLocalBeliefUpdates() + "\n" +
+                "  numLocalBeliefUpdates: " + numLocalBeliefUpdates();
     }
 }
