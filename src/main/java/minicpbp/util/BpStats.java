@@ -37,6 +37,10 @@ public class BpStats {
      * @return the average number of new incoming variable messages per update
      */
     public double avgNewIncomingVarMsgs() {
+        if (numLocalBeliefUpdates == 0) {
+            return 0;
+        }
+
         return (double) newIncomingVarMsgsSum / numLocalBeliefUpdates;
     }
 
@@ -47,6 +51,10 @@ public class BpStats {
      * @return the average incoming variable message usage efficiency
      */
     public double avgIncomingVarMsgsUsageEfficiency() {
+        if (numLocalBeliefUpdates == 0) {
+            return 0;
+        }
+
         return incomingVarMsgsUsageEfficiencySum / numLocalBeliefUpdates;
     }
 
@@ -56,6 +64,10 @@ public class BpStats {
      * @return the average number of unpropagated outgoing constraint messages per update
      */
     public double avgUnpropagatedOutgoingConMsgs() {
+        if (numLocalBeliefUpdates == 0) {
+            return 0;
+        }
+
         return (double) unpropagatedOutgoingConMsgsSum / numLocalBeliefUpdates;
     }
 
@@ -66,6 +78,10 @@ public class BpStats {
      * @return the average outgoing constraint message propagation efficiency
      */
     public double avgOutgoingConMsgsPropagationEfficiency() {
+        if (numLocalBeliefUpdates == 0) {
+            return 0;
+        }
+
         return outgoingConMsgsPropagationEfficiencySum / numLocalBeliefUpdates;
     }
 
@@ -75,15 +91,17 @@ public class BpStats {
      *
      * @return the number of local belief updates without a propagated outgoing message
      */
-    public int numUnpropagatedLocalBeliefUpdates() {
-        return numUnpropagatedLocalBeliefUpdates;
-    }
+    public int numUnpropagatedLocalBeliefUpdates() { return numUnpropagatedLocalBeliefUpdates; }
 
     /**
      * The average effective arity at the time of local belief updates, across all constraints.
      * @return the average effective arity per update
      */
     public double avgEffectiveArity() {
+        if (numLocalBeliefUpdates == 0) {
+            return 0;
+        }
+
         return (double) freeVarsSum / numLocalBeliefUpdates;
     }
 
