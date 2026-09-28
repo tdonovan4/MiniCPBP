@@ -410,6 +410,17 @@ public class MiniCP implements Solver {
  //                   break;
  //               }
             }
+            if (bpConfig.getBpSchedule().isAsync() && bpConfig.isPostBpLocalBeliefPropagation()) {
+                // Propagate remaining messages constraint-to-variable (might as well since they are already computed)
+                Iterator<Constraint> iteratorC = constraints.iterator();
+                while (iteratorC.hasNext()) {
+                    c = iteratorC.next();
+                    if (c.isActive()) {
+                        c.sendMessages(false);
+                    }
+                }
+            }
+
 //            System.out.println("after "+iter+" BP iterations");
         } catch (InconsistencyException e) {
             // empty the queue and unset the scheduled status
@@ -638,11 +649,6 @@ public class MiniCP implements Solver {
                     }
                     maxResidualCToX.from().sendMessageAndUpdateResiduals(maxResidualCToX.to());
                 }
-            }
-
-            Iterator<IntVar> iterator = variables.iterator();
-            while (iterator.hasNext()) {
-                iterator.next().normalizeMarginals();
             }
         }
         return true;

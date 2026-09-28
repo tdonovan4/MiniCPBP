@@ -91,10 +91,18 @@ public interface Constraint {
     void receiveMessage(IntVar x);
 
     /**
+     * Optionally updates its local belief (given the outside beliefs) and sends it
+     * as messages to the variables in its scope.
+     */
+    void sendMessages(boolean updateBelief);
+
+    /**
      * Updates its local belief (given the outside beliefs) and sends it 
      * as messages to the variables in its scope.
      */
-    void sendMessages();
+    default void sendMessages() {
+        sendMessages(true);
+    }
 
     /**
      * Send the current local belief for x to the x variable.

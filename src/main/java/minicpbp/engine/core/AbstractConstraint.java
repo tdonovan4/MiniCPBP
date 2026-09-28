@@ -294,9 +294,11 @@ public abstract class AbstractConstraint implements Constraint {
         }
     }
 
-    public void sendMessages() {
-        recordPreUpdateBeliefStats();
-        updateBelief();
+    public void sendMessages(boolean updateBelief) {
+        if (updateBelief) {
+            recordPreUpdateBeliefStats();
+            updateBelief();
+        }
         for (int i = 0; i < vars.length; i++) {
             sendMessage(i, false);
         }

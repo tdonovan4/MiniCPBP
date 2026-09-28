@@ -399,6 +399,9 @@ public class SolveXCSPFZN {
 		Option enumerateSolutionsOpt = Option.builder().longOpt("enumerate-solutions").hasArg(false).desc("search for all solutions and print true marginals (only for CSPs)")
 				.build();
 
+		Option postBpLocalBeliefPropagation = Option.builder().longOpt("post-bp-local-belief-prop").hasArg(false)
+				.desc("enable propagation of unpropagated contraint-to-variable messages after the BP iterations").build();
+
 		Option enableBpStatsOpt = Option.builder().longOpt("bp-stats").hasArg(false)
 				.desc("enable BP stats").build();
 
@@ -428,6 +431,7 @@ public class SolveXCSPFZN {
 		options.addOption(traceNbIterOpt);
 		options.addOption(traceEntropyOpt);
 		options.addOption(enumerateSolutionsOpt);
+		options.addOption(postBpLocalBeliefPropagation);
 		options.addOption(enableBpStatsOpt);
 
 		CommandLineParser parser = new DefaultParser();
@@ -507,6 +511,7 @@ public class SolveXCSPFZN {
 		traceNbIter = (cmd.hasOption("trace-iter"));
 		traceEntropy = (cmd.hasOption("trace-entropy"));
 
+		bpConfigBuilder.setPostBpLocalBeliefPropagation(cmd.hasOption("post-bp-local-belief-prop"));
 		enableBpStats = (cmd.hasOption("bp-stats"));
 	}
 
