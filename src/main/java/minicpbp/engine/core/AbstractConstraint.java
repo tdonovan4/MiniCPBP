@@ -23,6 +23,7 @@ import minicpbp.state.StateDouble;
 
 import minicpbp.util.Belief;
 
+import minicpbp.util.BpConfig;
 import minicpbp.util.ResidualPQ;
 
 import java.util.Arrays;
@@ -316,7 +317,7 @@ public abstract class AbstractConstraint implements Constraint {
         for (int i = 0; i < vars.length; i++) {
             // Identity comparison is used to identify the exact object
             if (vars[i].getConcreteVar() == x.getConcreteVar()) {
-                if (cp.getBpMode().isAsync()) {
+                if (cp.getBpConfig().getBpSchedule().isAsync()) {
                     vars[i].receiveMessage(v, beliefRep.pow(prevLocalBelief(i, v), this.weight));
                 } else {
                     vars[i].receiveMessage(v, beliefRep.pow(localBelief(i, v), this.weight));
@@ -504,7 +505,7 @@ public abstract class AbstractConstraint implements Constraint {
                         break; // all other values in this loop will have been removed from the domain
                     }
                 }
-                if (!cp.getBpMode().isAsync()){
+                if (!cp.getBpConfig().getBpSchedule().isAsync()){
                     vars[varIdx].receiveMessage(val, beliefRep.pow(localB, this.weight));
                 } else {
                     double prevLocalB = prevLocalBelief(varIdx, val);
@@ -519,7 +520,7 @@ public abstract class AbstractConstraint implements Constraint {
                 }
             }
 
-            if (cp.getBpMode().isAsync()) {
+            if (cp.getBpConfig().getBpSchedule().isAsync()) {
                 // Updated c->x edge value
                 cp.consumeRbpBudget(1);
                 vars[varIdx].normalizeMarginals();
@@ -558,7 +559,7 @@ public abstract class AbstractConstraint implements Constraint {
             for (int j = 0; j < s; j++) {
                 int val = domainValues[j];
                 double localB;
-                if (cp.getBpMode().isAsync()) {
+                if (cp.getBpConfig().getBpSchedule().isAsync()) {
                     // Current local belief might not have been sent to the variable yet
                     localB = prevLocalBelief(varIdx, val);
                 } else {
@@ -573,7 +574,7 @@ public abstract class AbstractConstraint implements Constraint {
                     dampenMessages(varIdx);
             }
 
-            if (cp.dampingMessages() && !cp.getBpMode().isAsync()) {
+            if (cp.dampingMessages() && !cp.getBpConfig().getBpSchedule().isAsync()) {
                 for (int j = 0; j < s; j++) {
                     int val = domainValues[j];
                     setPrevOutsideBelief(varIdx, val, outsideBelief(varIdx, val));
@@ -586,7 +587,7 @@ public abstract class AbstractConstraint implements Constraint {
                 System.out.println("  Msg :" + Arrays.toString(outsideBelief[varIdx]));
             }
 
-            if (cp.getBpMode().isAsync()) {
+            if (cp.getBpConfig().getBpSchedule().isAsync()) {
                 double residual = residual(outsideBelief[varIdx], prevOutsideBelief[varIdx], inboundPropagationCount[varIdx]);
                 if (cp.getTraceBPMsgsFlag()) {
                     System.out.println("  Residual: " + residual);
@@ -606,7 +607,7 @@ public abstract class AbstractConstraint implements Constraint {
         }
 
         double residual = 0;
-        switch (cp.getRbpNorm()) {
+        switch (cp.getBpConfig().getRbpNorm()) {
             case L1:
                 while (a.hasNext() && b.hasNext()) {
                     residual += Math.pow(a.next() - b.next(), 2);
@@ -627,11 +628,11 @@ public abstract class AbstractConstraint implements Constraint {
                 }
                 break;
             default:
-                throw new UnsupportedOperationException("Unsupported RBP norm: " + cp.getRbpNorm());
+                throw new UnsupportedOperationException("Unsupported RBP norm: " + cp.getBpConfig().getRbpNorm());
         }
         assert !a.hasNext() && !b.hasNext() : "both sides should have the same number of values";
 
-        if (cp.getBpMode() == Solver.BpMode.WDBP) {
+        if (cp.getBpConfig().getBpSchedule() == BpConfig.BpSchedule.WDBP) {
             return residual / propagationCount;
         } else {
             return residual;

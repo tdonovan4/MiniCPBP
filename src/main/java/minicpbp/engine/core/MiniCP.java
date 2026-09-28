@@ -47,11 +47,6 @@ public class MiniCP implements Solver {
     // BP  /* belief propagation */
     // SBP /* first apply support propagation, then belief propagation */
     private static PropaMode mode = PropaMode.SBP;
-    // Standard  /* standard belief propagation */
-    // RBP /* residual belief propagation */
-    private BpMode bpMode = BpMode.Standard;
-    // nb of BP iterations performed
-    private static int beliefPropaMaxIter = 10;
     // apply damping to variable-to-constraint messages
     private static boolean damping = true;
     // damping factor in interval [0,1] where 1 is equivalent to no damping
@@ -95,13 +90,12 @@ public class MiniCP implements Solver {
     private long potentialTrigger = 0;
 
     // for BP
+    private BpConfig bpConfig;
     private BpStats bpStats;
 
     // for RBP
-    private RbpNorm rbpNorm;
     private final ResidualPQ residualPQ = new ResidualPQ();
     private boolean hasPropagatedAllMessages = false;
-    private double minResidual = 1e-20;
     private int rbpBudget;
 
     public MiniCP(StateManager sm) {
@@ -165,25 +159,9 @@ public class MiniCP implements Solver {
         return mode;
     }
 
-    public void setBpMode(BpMode mode) {
-        bpMode = mode;
-    }
+    public void setBpConfig(BpConfig bpConfig) { this.bpConfig = bpConfig; }
 
-    public BpMode getBpMode() {
-        return bpMode;
-    }
-
-    public void setRbpNorm(RbpNorm norm) {
-        rbpNorm = norm;
-    }
-
-    public RbpNorm getRbpNorm() {
-        return rbpNorm;
-    }
-
-    public void setMinResidual(double minResidual) {
-        this.minResidual = minResidual;
-    }
+    public BpConfig getBpConfig() { return bpConfig; }
 
     public ConstraintWeighingScheme getWeighingScheme() {
         return Wscheme;
@@ -205,10 +183,6 @@ public class MiniCP implements Solver {
 
     public void setTraceEntropyFlag(boolean traceEntropy) {
         MiniCP.traceEntropy = traceEntropy;
-    }
-
-    public void setMaxIter(int maxIter) {
-        MiniCP.beliefPropaMaxIter = maxIter;
     }
 
     public boolean dampingMessages() {
@@ -371,13 +345,13 @@ public class MiniCP implements Solver {
                 }
                 prevOutsideBeliefRecorded = false;
 
-                if (bpMode.isAsync()) {
+                if (bpConfig.getBpSchedule().isAsync()) {
                     initAsyncBP();
                 }
             }
             double previousEntropy, currentEntropy = 1.0;
             int iter;
-            for (iter = 1; iter <= beliefPropaMaxIter; iter++) {
+            for (iter = 1; iter <= bpConfig.getMaxIter(); iter++) {
 //                System.out.println("##### after BP iteration 0 #####");
 //                for (int i = 0; i < variables.size(); i++) {
 //                    System.out.print(variables.get(i).getName());
@@ -534,7 +508,7 @@ public class MiniCP implements Solver {
             }
             prevOutsideBeliefRecorded = false;
 
-            if (bpMode.isAsync()) {
+            if (bpConfig.getBpSchedule().isAsync()) {
                 initAsyncBP();
             }
             currentEntropy = 1.0;
@@ -542,7 +516,7 @@ public class MiniCP implements Solver {
             valleyCount = 0;
             dampingFactorDetermined = true;
             // BP dive
-            for (int iter = 1; iter <= beliefPropaMaxIter; iter++) {
+            for (int iter = 1; iter <= bpConfig.getMaxIter(); iter++) {
                 boolean shouldContinue = BPiteration(iter);
                 if (!shouldContinue)
                     break;
@@ -590,7 +564,7 @@ public class MiniCP implements Solver {
      * @return boolean indicating if the iterations should be continued
      */
     private boolean BPiteration(int iterNum) {
-        if (!bpMode.isAsync()) {
+        if (!bpConfig.getBpSchedule().isAsync()) {
             Constraint c;
             Iterator<Constraint> iteratorC = constraints.iterator();
             while (iteratorC.hasNext()) {
@@ -612,7 +586,7 @@ public class MiniCP implements Solver {
             while (iterator.hasNext()) {
                 iterator.next().normalizeMarginals();
             }
-        } else if (!hasPropagatedAllMessages || bpMode == BpMode.ABP) {
+        } else if (!hasPropagatedAllMessages) {
             Iterator<Constraint> iteratorC = constraints.iterator();
             Constraint c;
             // We send constraint-to-variable messages and then variable-to-constraint messages, which is the opposite
@@ -648,7 +622,7 @@ public class MiniCP implements Solver {
 //            }
             while (rbpBudget > 0) {
                 ResidualPQ.Residual maxResidual = residualPQ.maxResidual();
-                if (maxResidual.residual() < minResidual) {
+                if (maxResidual.residual() < bpConfig.getMinResidual()) {
                     return false;
                 }
                 if (maxResidual instanceof ResidualPQ.VarToConstraintResidual) {

@@ -13,6 +13,7 @@ import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.Solver;
 import minicpbp.search.Search;
 import minicpbp.search.SearchStatistics;
+import minicpbp.util.BpConfig;
 import minicpbp.util.Procedure;
 import minicpbp.util.SolutionDistribution;
 import minicpbp.util.exception.InconsistencyException;
@@ -77,20 +78,19 @@ public class SolveXCSPFZN {
 		}
 	};
 
-	private static final Map<String, Solver.BpMode> bpModeMap = new HashMap<String, Solver.BpMode>() {
+	private static final Map<String, BpConfig.BpSchedule> bpScheduleMap = new HashMap<String, BpConfig.BpSchedule>() {
 		{
-			put("standard", Solver.BpMode.Standard);
-			put("rbp", Solver.BpMode.RBP);
-			put("abp", Solver.BpMode.ABP);
-			put("wdbp", Solver.BpMode.WDBP);
+			put("flood", BpConfig.BpSchedule.Flood);
+			put("rbp", BpConfig.BpSchedule.RBP);
+			put("wdbp", BpConfig.BpSchedule.WDBP);
 		}
 	};
 
-	private static Map<String, Solver.RbpNorm> rbpNormMap = new HashMap<String, Solver.RbpNorm>() {
+	private static final Map<String, BpConfig.RbpNorm> rbpNormMap = new HashMap<String, BpConfig.RbpNorm>() {
 		{
-			put("l1", Solver.RbpNorm.L1);
-			put("l2", Solver.RbpNorm.L2);
-			put("linf", Solver.RbpNorm.LInf);
+			put("l1", BpConfig.RbpNorm.L1);
+			put("l2", BpConfig.RbpNorm.L2);
+			put("linf", BpConfig.RbpNorm.LInf);
 		}
 	};
 
@@ -109,18 +109,15 @@ public class SolveXCSPFZN {
 
 	// Optional Params
 	private TreeSearchType searchType = TreeSearchType.DFS;
-	private Solver.BpMode bpMode = Solver.BpMode.Standard;
-	private Solver.RbpNorm rbpNorm = Solver.RbpNorm.LInf;
 	private boolean checkSolution = false;
 	private String statsFileStr = "";
 	private String solFileStr = "";
-	private int maxIter = 10;
 	private boolean restart = false;
 	private int nbFailCutof = 100;
 	private double restartFactor = 1.5;
 	private boolean initImpact = false;
 	private boolean enumerateSolutions = false;
-	private double minResidual = 1e-20;
+	private final BpConfig.BpConfigBuilder bpConfigBuilder = new BpConfig.BpConfigBuilder();
 	private boolean enableBpStats = false;
 
 	// TODO: unused fields, figure out if we want to keep them
@@ -138,10 +135,7 @@ public class SolveXCSPFZN {
 		minicp.setTraceBPMsgsFlag(traceBPMsgs);
 		minicp.setTraceSearchFlag(traceSearch);
 		minicp.setTraceEntropyFlag(traceEntropy);
-		minicp.setMaxIter(maxIter);
-		minicp.setBpMode(bpMode);
-		minicp.setRbpNorm(rbpNorm);
-		minicp.setMinResidual(minResidual);
+		minicp.setBpConfig(bpConfigBuilder.createBpConfig());
 		if (enableBpStats) {
 			minicp.enableBpStats();
 		}
@@ -326,7 +320,7 @@ public class SolveXCSPFZN {
 		String quotedValidSearchTypes = searchTypeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
-		String quotedValidBpMode = bpModeMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
+		String quotedValidBpMode = bpScheduleMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
 				.collect(Collectors.joining(",\n"));
 
 		String quotedValidRbpNorm = rbpNormMap.keySet().stream().sorted().map(x -> "\"" + x + "\"")
@@ -341,11 +335,11 @@ public class SolveXCSPFZN {
 		Option searchOpt = Option.builder().longOpt("search-type").argName("SEARCH").required().hasArg()
 				.desc("search type.\nValid search types are:\n" + quotedValidSearchTypes).build();
 
-		Option bpModeOpt = Option.builder().longOpt("bp-mode").argName("BP MODE").hasArg()
-				.desc("bp mode.\nValid bp modes are:\n" + quotedValidBpMode).build();
+		Option bpScheduleOpt = Option.builder().longOpt("bp-schedule").argName("BP SCHEDULE").hasArg()
+				.desc("bp schedule.\nValid bp schedules are:\n" + quotedValidBpMode).build();
 
 		Option rbpNormOpt = Option.builder().longOpt("rbp-norm").argName("RBP NORM").hasArg()
-				.desc("bp mode.\nValid RBP norm are:\n" + quotedValidRbpNorm).build();
+				.desc("rbp norm.\nValid RBP norm are:\n" + quotedValidRbpNorm).build();
 
 		Option timeoutOpt = Option.builder().longOpt("timeout").argName("SECONDS").required().hasArg()
 				.desc("timeout in seconds").build();
@@ -412,7 +406,7 @@ public class SolveXCSPFZN {
 		options.addOption(xcspFileOpt);
 		options.addOption(branchingOpt);
 		options.addOption(searchOpt);
-		options.addOption(bpModeOpt);
+		options.addOption(bpScheduleOpt);
 		options.addOption(rbpNormOpt);
 		options.addOption(timeoutOpt);
 		options.addOption(statsFileOpt);
@@ -454,16 +448,16 @@ public class SolveXCSPFZN {
 		checkSearchTypeOption(searchTypeStr);
 		searchType = searchTypeMap.get(searchTypeStr);
 
-		String bpModeStr = cmd.getOptionValue("bp-mode");
-		if (bpModeStr != null) {
-			checkBpModeOption(bpModeStr);
-			bpMode = bpModeMap.get(bpModeStr);
+		String bpScheduleStr = cmd.getOptionValue("bp-schedule");
+		if (bpScheduleStr != null) {
+			checkBpScheduleOption(bpScheduleStr);
+			bpConfigBuilder.setBpSchedule(bpScheduleMap.get(bpScheduleStr));
 		}
 
 		String rbpNormStr = cmd.getOptionValue("rbp-norm");
 		if (rbpNormStr != null) {
 			checkRbpNormOption(rbpNormStr);
-			rbpNorm = rbpNormMap.get(rbpNormStr);
+			bpConfigBuilder.setRbpNorm(rbpNormMap.get(rbpNormStr));
 		}
 
 		inputStr = cmd.getOptionValue("input");
@@ -483,7 +477,7 @@ public class SolveXCSPFZN {
 		}
 
 		if (cmd.hasOption("max-iter"))
-			maxIter = Integer.parseInt(cmd.getOptionValue("max-iter"));
+			bpConfigBuilder.setMaxIter(Integer.parseInt(cmd.getOptionValue("max-iter")));
 
 		if (cmd.hasOption("damping-factor"))
 			dampingFactor = Double.parseDouble(cmd.getOptionValue("damping-factor"));
@@ -498,7 +492,7 @@ public class SolveXCSPFZN {
 			variationThreshold = Double.parseDouble(cmd.getOptionValue("var-threshold"));
 
 		if(cmd.hasOption("min-residual"))
-			minResidual = Double.parseDouble(cmd.getOptionValue("min-residual"));
+			bpConfigBuilder.setMinResidual(Double.parseDouble(cmd.getOptionValue("min-residual")));
 
 		checkSolution = (cmd.hasOption("verify"));
 		damp = (cmd.hasOption("damp-messages"));
@@ -556,9 +550,7 @@ public class SolveXCSPFZN {
 	public void setSolFileStr(String solFileStr) {
 		this.solFileStr = solFileStr;
 	}
-	public void setMaxIter(int maxIter) {
-		this.maxIter = maxIter;
-	}
+	public void setMaxIter(int maxIter) { bpConfigBuilder.setMaxIter(maxIter); }
 	public void setRestart(boolean restart) {
 		this.restart = restart;
 	}
@@ -634,13 +626,13 @@ public class SolveXCSPFZN {
 		}
 	}
 
-	private static void checkBpModeOption(String bpModeStr) {
+	private static void checkBpScheduleOption(String bpScheduleStr) {
 
-		if (!bpModeMap.containsKey(bpModeStr)) {
-			System.out.println("invalid BP mode " + bpModeStr);
-			System.out.println("BP mode should be one of the following: ");
-			for (String mode : bpModeMap.keySet())
-				System.out.println(mode);
+		if (!bpScheduleMap.containsKey(bpScheduleStr)) {
+			System.out.println("invalid BP schedule " + bpScheduleStr);
+			System.out.println("BP schedule should be one of the following: ");
+			for (String schedule : bpScheduleMap.keySet())
+				System.out.println(schedule);
 			System.exit(1);
 		}
 	}
@@ -650,8 +642,8 @@ public class SolveXCSPFZN {
 		if (!rbpNormMap.containsKey(rbpNormStr)) {
 			System.out.println("invalid RBP norm " + rbpNormStr);
 			System.out.println("RBP norm should be one of the following: ");
-			for (String mode : rbpNormMap.keySet())
-				System.out.println(mode);
+			for (String norm : rbpNormMap.keySet())
+				System.out.println(norm);
 			System.exit(1);
 		}
 	}

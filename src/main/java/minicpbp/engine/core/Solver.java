@@ -21,10 +21,7 @@ package minicpbp.engine.core;
 import minicpbp.search.Objective;
 import minicpbp.state.StateManager;
 import minicpbp.state.StateStack;
-import minicpbp.util.BpStats;
-import minicpbp.util.Procedure;
-import minicpbp.util.Belief;
-import minicpbp.util.ResidualPQ;
+import minicpbp.util.*;
 
 import java.util.Optional;
 import java.util.Random;
@@ -40,23 +37,6 @@ public interface Solver {
     enum ConstraintWeighingScheme {
 	SAME   /* constraints all have the same weight; = 1.0 (default) */,
 	ARITY  /* a constraint's weight is related to its arity; = 1 + arity/total_nb_of_vars */
-    }
-
-    enum BpMode {
-        Standard,
-        ABP,
-        RBP,
-        WDBP;
-
-        boolean isAsync() {
-            return this == ABP || this == RBP || this == WDBP;
-        }
-    }
-
-    enum RbpNorm {
-        L1,
-        L2,
-        LInf
     }
 
     /**
@@ -101,32 +81,15 @@ public interface Solver {
     void setMode(PropaMode mode);
 
     /**
-     * @return the BP mode
+     * @return the BP config
      */
-    BpMode getBpMode();
+    BpConfig getBpConfig();
 
     /**
-     * Set the BP mode
-     * @param mode BP mode
+     * Set the BP config
+     * @param bpConfig BP config
      */
-    void setBpMode(BpMode mode);
-
-    /**
-     * @return the RBP norm
-     */
-    RbpNorm getRbpNorm();
-
-    /**
-     * Set the RBP norm
-     * @param norm RBP norm
-     */
-    void setRbpNorm(RbpNorm norm);
-
-    /**
-     * Set the min residual to continue RBP iterations
-     * @param minResidual min residual
-     */
-    void setMinResidual(double minResidual);
+    void setBpConfig(BpConfig bpConfig);
 
     /**
      * @return the constraint weighing scheme
@@ -163,12 +126,6 @@ public interface Solver {
      * Enables the recording and displaying of belief propagation stats
      */
     void enableBpStats();
-
-    /**
-     * Set the maximal number of BP iterations before each branching
-     * @param maxIter the maximal number of BP iterations
-     */
-    void setMaxIter(int maxIter);
 
     /**
      * @return whether message damping is applied
