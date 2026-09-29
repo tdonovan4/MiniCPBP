@@ -339,10 +339,10 @@ public interface IntVar {
        assert oldB <= beliefRep.one() && oldB >= beliefRep.zero() : "oldB = " + oldB;
        assert newB <= beliefRep.one() && newB >= beliefRep.zero() : "newB = " + newB;
        assert marginal(v) <= beliefRep.one() && marginal(v) >= beliefRep.zero() : "domain.marginal(v) = " + marginal(v);
-       if (newB == 0) {
+       if (beliefRep.isZero(newB)) {
            // Avoids NaN if oldB is also 0
            setMarginal(v, beliefRep.zero());
-       } else if (oldB == 0) {
+       } else if (beliefRep.isZero(oldB)) {
            // Recalculate from constraints
            if (getSolver().getTraceBPMsgsFlag()) {
                System.out.println("recomputing old marginal for " + this.getName() + "=" + v + " because old belief is 0");

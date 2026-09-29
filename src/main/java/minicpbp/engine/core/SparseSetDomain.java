@@ -198,24 +198,24 @@ public class SparseSetDomain implements IntDomain {
     }
 
     @Override
-    public void normalizeMarginals() {
-
+    public double normalizeMarginals() {
         int s = fillArray(domainValues);
         if (s == 1) { // corresponding variable is bound
             setMarginal(domainValues[0], beliefRep.one());
-            return;
+            return beliefRep.one();
         }
         for (int j = 0; j < s; j++) {
             beliefValues[j] = marginal(domainValues[j]);
         }
         double normalizingConstant = beliefRep.summation(beliefValues, s);
         if (beliefRep.isZero(normalizingConstant)) // all marginals are zero (actOnZeroOneBelief set to false?)
-            return;
+            return beliefRep.one();
         for (int j = 0; j < s; j++) {
             int v = domainValues[j];
             setMarginal(v, beliefRep.divide(marginal(v), normalizingConstant));
             assert marginal(v) <= beliefRep.one() && marginal(v) >= beliefRep.zero() : "marginal(v) = " + marginal(v);
         }
+        return normalizingConstant;
     }
 
     @Override

@@ -183,8 +183,9 @@ public interface IntDomain {
     /**
      * Normalizes the marginals.
      *
+     * @return The partition function
      */
-    void normalizeMarginals();
+    double normalizeMarginals();
 
     /**
      * Returns the largest marginal for a value in the domain.

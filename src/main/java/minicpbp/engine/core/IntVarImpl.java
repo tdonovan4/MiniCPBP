@@ -46,6 +46,7 @@ public class IntVarImpl implements IntVar {
     private StateStack<Constraint> onBounds;
     private StateStack<Constraint> constraints; //contains all constraints, allows us to get the failure count of all constraints applied to the variable
     private boolean isForBranching = false;
+    private double normalizingConstant;
 
     private DomainListener domListener = new DomainListener() {
         @Override
@@ -102,6 +103,7 @@ public class IntVarImpl implements IntVar {
         onBind = new StateStack<>(cp.getStateManager());
         onBounds = new StateStack<>(cp.getStateManager());
         constraints = new StateStack<>(cp.getStateManager());
+        normalizingConstant = beliefRep.one();
         cp.registerVar(this);
     }
 
@@ -274,6 +276,7 @@ public class IntVarImpl implements IntVar {
     @Override
     public void resetMarginals() {
         domain.resetMarginals();
+        normalizingConstant = beliefRep.one();
     }
 
     @Override
@@ -284,11 +287,12 @@ public class IntVarImpl implements IntVar {
             Constraint c = it.next();
             c.resendMessage(this, v);
         }
+        setMarginal(v, beliefRep.divide(marginal(v), normalizingConstant));
     }
 
     @Override
     public void normalizeMarginals() {
-        domain.normalizeMarginals();
+        normalizingConstant = beliefRep.multiply(normalizingConstant, domain.normalizeMarginals());
     }
 
     @Override
