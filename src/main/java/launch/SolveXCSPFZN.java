@@ -2,8 +2,7 @@ package launch;
 
 import java.io.File;
 
-import minicpbp.search.DovetailSearch;
-import minicpbp.search.LDSearch;
+import minicpbp.search.*;
 import minicpbp.util.Log;
 import java.util.HashMap;
 import java.util.Map;
@@ -17,8 +16,6 @@ import java.util.stream.Collectors;
 
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.Solver;
-import minicpbp.search.Search;
-import minicpbp.search.SearchStatistics;
 import minicpbp.util.Procedure;
 import minicpbp.util.SolutionDistribution;
 import minicpbp.util.exception.InconsistencyException;
@@ -289,19 +286,32 @@ public class SolveXCSPFZN {
 		});
 
 		SearchStatistics stats;
+		Predicate<SearchStatistics> limit;
+		Objective obj;
+
 		switch (frontend.getGoal()) {
 			//find a solution that maximize the cost function
 			case MAX:
-				stats = search.optimize(minicp.maximize(frontend.getObjectiveVar()),
-						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+				limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L);
+				obj = minicp.minimize(frontend.getObjectiveVar());
+				if(!restart) {
+					stats = search.optimize(obj, limit);
+				} else {
+					stats = search.optimizeRestarts(obj, limit, nbFailCutoff, restartFactor);
+				}
 				break;
 			//find a solution that minimize the cost function
 			case MIN:
-				stats = search.optimize(minicp.minimize(frontend.getObjectiveVar()),
-						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+				limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L);
+				obj = minicp.minimize(frontend.getObjectiveVar());
+				if(!restart) {
+					stats = search.optimize(obj, limit);
+				} else {
+					stats = search.optimizeRestarts(obj, limit, nbFailCutoff, restartFactor);
+				}
 				break;
 			default:
-				Predicate<SearchStatistics> limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || (!enumerateSolutions && foundSolution.get()));
+				limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || (!enumerateSolutions && foundSolution.get()));
 				//find a solution that satisfies all constraints without restart
 				if(!restart) {
 					stats = search.solve(limit);

@@ -233,6 +233,9 @@ public class LDSearch extends Search{
     public SearchStatistics solveRestarts(Predicate<SearchStatistics> limit, int nbFailCutof, double restartFactor) {
         throw new NotImplementedException();
     }
+    public SearchStatistics optimizeRestarts(Objective obj, Predicate<SearchStatistics> limit, int nbFailCutoff, double restartFactor) {
+        throw new NotImplementedException();
+    }
 
     public void initializeImpact(IntVar... x) {
         throw new NotImplementedException();

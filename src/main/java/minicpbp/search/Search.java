@@ -212,6 +212,8 @@ public abstract class Search {
 
 	public abstract SearchStatistics optimize(Objective obj, Predicate<SearchStatistics> limit);
 
+	public abstract SearchStatistics optimizeRestarts(Objective obj, Predicate<SearchStatistics> limit, int nbFailCutof, double restartFactor);
+
 	public abstract SearchStatistics solveRestarts(Predicate<SearchStatistics> limit, int nbFailCutof, double restartFactor);
 
 	public abstract void initializeImpact(IntVar... x);
