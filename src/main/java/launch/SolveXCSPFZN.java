@@ -110,7 +110,8 @@ public class SolveXCSPFZN {
 	private String solFileStr = "";
 	private int maxIter = 10;
 	private boolean restart = false;
-	private int nbFailCutof = 100;
+	private int nbFailCutoff = 100;
+	private boolean scaleCutoff = false;
 	private double restartFactor = 1.5;
 	private boolean initImpact = false;
 	private boolean enumerateSolutions = false;
@@ -174,6 +175,10 @@ public class SolveXCSPFZN {
 			return;
 		}
 
+		if (scaleCutoff) {
+			nbFailCutoff = nbFailCutoff * decisionsVars.length;
+		}
+
 		Search search = null;
 		try {
 			switch (heuristic) {
@@ -215,7 +220,6 @@ public class SolveXCSPFZN {
 					minicp.setMode(Solver.PropaMode.SP);
 					search = makeSearch(impactBasedSearch(decisionsVars));
 					search.initializeImpactDomains(decisionsVars);
-					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case MIE:
 					search = makeDfs(minicp, minEntropyRegisterImpact(decisionsVars), impactEntropy(decisionsVars));
@@ -233,14 +237,12 @@ public class SolveXCSPFZN {
 					// exactly the price of BP. Default unchanged (SP).
 					minicp.setMode(Boolean.getBoolean("exp.forceSBP") ? Solver.PropaMode.SBP : Solver.PropaMode.SP);
 					search = makeSearch(domWdeg(decisionsVars));
-					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case WDEGCNT:
 					// amendment A5 (MDD_COUNTING_PLAN.md §6.3): SP mode, no BP; the value
 					// comes from the incident ValueCounter constraints (Cumulative)
 					minicp.setMode(Solver.PropaMode.SP);
 					search = makeSearch(domWdegCountValue(decisionsVars));
-					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case WDEGRV:
 					// N7 (VALUE_ISOLATION_EXPERIMENT.md, W4): the unbiased value-rule
@@ -251,7 +253,6 @@ public class SolveXCSPFZN {
 					// unreproducible.
 					minicp.setMode(Solver.PropaMode.SP);
 					search = makeSearch(domWdegRandomValue(decisionsVars));
-					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case WDEGMXM:
 					// probe O (BP_PROBE_PROTOCOL amendment 11): dom/wdeg variable
@@ -307,7 +308,7 @@ public class SolveXCSPFZN {
 				}
 				//find a solution that satisfies all constraints with restarts during the search
 				else {
-					stats = search.solveRestarts(limit, nbFailCutof, restartFactor);
+					stats = search.solveRestarts(limit, nbFailCutoff, restartFactor);
 				}
 				break;
 		}
@@ -492,8 +493,10 @@ public class SolveXCSPFZN {
 
 		Option restartSearchOpt = Option.builder().longOpt("restart").hasArg(false).desc("authorized restart during search (available with dfs only)")
 				.build();
-		Option nbFailsCutofOpt = Option.builder().longOpt("cutoff").argName("CUTOF").hasArg()
+		Option nbFailsCutoffOpt = Option.builder().longOpt("cutoff").argName("CUTOF").hasArg()
 				.desc("number of failure before restart").build();
+		Option scaleCutoffOpt = Option.builder().longOpt("scale-cutoff").hasArg(false)
+				.desc("whether to scale the cutoff with the number of branching variables (default to true)").build();
 
 		Option restartFactorOpt = Option.builder().longOpt("restart-factor").argName("restartFactor").hasArg()
 				.desc("factor to increase number of failure before restart").build();
@@ -530,7 +533,8 @@ public class SolveXCSPFZN {
 		options.addOption(dampOpt);
 		options.addOption(dFactorOpt);
 		options.addOption(restartSearchOpt);
-		options.addOption(nbFailsCutofOpt);
+		options.addOption(nbFailsCutoffOpt);
+		options.addOption(scaleCutoffOpt);
 		options.addOption(restartFactorOpt);
 		options.addOption(variationThresholdOpt);
 		options.addOption(initImpactOpt);
@@ -581,7 +585,7 @@ public class SolveXCSPFZN {
 			dampingFactor = Double.parseDouble(cmd.getOptionValue("damping-factor"));
 
 		if(cmd.hasOption("cutoff"))
-			nbFailCutof = Integer.parseInt(cmd.getOptionValue("cutoff"));
+			nbFailCutoff = Integer.parseInt(cmd.getOptionValue("cutoff"));
 
 		if(cmd.hasOption("restart-factor"))
 			restartFactor = Double.parseDouble(cmd.getOptionValue("restart-factor"));
@@ -595,6 +599,7 @@ public class SolveXCSPFZN {
 		initImpact = (cmd.hasOption("init-impact"));
 		dynamicStopBP = (cmd.hasOption("dynamic-stop"));
 		enumerateSolutions = (cmd.hasOption("enumerate-solutions"));
+		scaleCutoff = cmd.hasOption("scale-cutoff");
 
 		traceBP = (cmd.hasOption("trace-bp"));
 		traceSearch = (cmd.hasOption("trace-search"));
@@ -648,8 +653,8 @@ public class SolveXCSPFZN {
 	public void setRestart(boolean restart) {
 		this.restart = restart;
 	}
-	public void setNbFailCutof(int nbFailCutof) {
-		this.nbFailCutof = nbFailCutof;
+	public void setNbFailCutoff(int nbFailCutoff) {
+		this.nbFailCutoff = nbFailCutoff;
 	}
 	public void setRestartFactor(double restartFactor) {
 		this.restartFactor = restartFactor;
