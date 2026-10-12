@@ -137,6 +137,7 @@ public class DFSearch extends Search{
             sm.withNewState(() -> {
                 try {
 		            dfs(statistics, restartLimit);
+                    statistics.setCompleted();
                 } catch (StopSearchException ignored) {
                 } catch (StackOverflowError e) {
                     throw new NotImplementedException("dfs with explicit stack needed to pass this test");
@@ -149,7 +150,6 @@ public class DFSearch extends Search{
             cutoff *= restartFactor;
             cumulCutoff[0] += (int) cutoff;
         }
-        statistics.setCompleted();
         return statistics;
     }
 
