@@ -129,8 +129,8 @@ public class DFSearch extends Search{
     }
 
     private SearchStatistics solveRestarts(SearchStatistics statistics, Predicate<SearchStatistics> limit, int nbFailsCutoff, final double restartFactor) {
-        int cutoff = nbFailsCutoff;
-        final int[] cumulCutoff = new int[]{cutoff};
+        double cutoff = nbFailsCutoff;
+        final int[] cumulCutoff = new int[]{nbFailsCutoff};
         // completed only when one run explores its whole tree without hitting a limit (as in solve);
         // previously the loop set completed whenever it exited, so a timeout was reported as UNSAT,
         // and an exhausted tree was not noticed (the loop kept restarting until the limit)
@@ -156,7 +156,7 @@ public class DFSearch extends Search{
                 this.branchingSecond = null;
             }
             cutoff *= restartFactor;
-            cumulCutoff[0] += cutoff;
+            cumulCutoff[0] += (int) cutoff;
         }
         return statistics;
     }
