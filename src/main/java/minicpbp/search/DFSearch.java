@@ -129,8 +129,8 @@ public class DFSearch extends Search{
     }
 
     private SearchStatistics solveRestarts(SearchStatistics statistics, Predicate<SearchStatistics> limit, int nbFailsCutoff, final double restartFactor) {
-        int cutoff = nbFailsCutoff;
-        final int[] cumulCutoff = new int[]{cutoff};
+        double cutoff = nbFailsCutoff;
+        final int[] cumulCutoff = new int[]{nbFailsCutoff};
         while (!limit.test(statistics)) {
 //            System.out.println("restart limit: "+cutoff+" fails");
             Predicate<SearchStatistics> restartLimit = limit.or(stat -> stat.numberOfFailures() > cumulCutoff[0]);
@@ -147,7 +147,7 @@ public class DFSearch extends Search{
                 this.branchingSecond = null;
             }
             cutoff *= restartFactor;
-            cumulCutoff[0] += cutoff;
+            cumulCutoff[0] += (int) cutoff;
         }
         statistics.setCompleted();
         return statistics;
