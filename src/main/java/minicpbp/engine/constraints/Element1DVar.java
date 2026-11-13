@@ -28,6 +28,8 @@ public class Element1DVar extends AbstractConstraint {
     private final IntVar[] vars;
 
     private final int[] yValues;
+    private double[] weighted; // b_y(k)·s_k per position of yValues (z free)
+    private double[] suffix;   // suffix sums of weighted
     private IntVar supMin;
     private IntVar supMax;
     private int zMin;
@@ -170,12 +172,73 @@ public class Element1DVar extends AbstractConstraint {
                 }
             }
         }
-        else { // default uniform belief
-            for (int i = 0; i < vars.length; i++) {
-                int nVal = vars[i].fillArray(domainValues);
-                for (int j = 0; j < nVal; j++) {
+        else
+            updateBeliefZfree();
+    }
+
+    /**
+     * Exact messages for z = array[y] with z free, in O(n·d).
+     * With s_k = sum over v in D(array[k]) ∩ D(z) of b_array[k](v)·b_z(v):
+     * to y, m(k) = s_k; to z, m(v) = sum over k of b_y(k)·b_array[k](v);
+     * to array[i] with i in D(y), m(v) = b_y(i)·b_z(v) + sum over k ≠ i of b_y(k)·s_k,
+     * uniform otherwise. The sums over k ≠ i use prefix and suffix sums rather than
+     * a subtraction, which loses precision in the log representation.
+     */
+    private void updateBeliefZfree() {
+        final int yPos = array.length, zPos = array.length + 1;
+        if (weighted == null) {
+            weighted = new double[yValues.length];
+            suffix = new double[yValues.length + 1];
+        }
+        int nY = y.fillArray(yValues);
+        // to y: s_k
+        for (int a = 0; a < nY; a++) {
+            int k = yValues[a];
+            double s = beliefRep.zero();
+            int nVal = array[k].fillArray(domainValues);
+            for (int j = 0; j < nVal; j++) {
+                int v = domainValues[j];
+                if (z.contains(v))
+                    s = beliefRep.add(s, beliefRep.multiply(outsideBelief(k, v), outsideBelief(zPos, v)));
+            }
+            setLocalBelief(yPos, k, s);
+            weighted[a] = beliefRep.multiply(outsideBelief(yPos, k), s);
+        }
+        // to z
+        int nZ = z.fillArray(domainValues);
+        for (int j = 0; j < nZ; j++) {
+            int v = domainValues[j];
+            double m = beliefRep.zero();
+            for (int a = 0; a < nY; a++) {
+                int k = yValues[a];
+                if (array[k].contains(v))
+                    m = beliefRep.add(m, beliefRep.multiply(outsideBelief(yPos, k), outsideBelief(k, v)));
+            }
+            setLocalBelief(zPos, v, m);
+        }
+        // to array[i], i in D(y)
+        suffix[nY] = beliefRep.zero();
+        for (int a = nY - 1; a >= 0; a--)
+            suffix[a] = beliefRep.add(suffix[a + 1], weighted[a]);
+        double prefix = beliefRep.zero();
+        for (int a = 0; a < nY; a++) {
+            int i = yValues[a];
+            double others = beliefRep.add(prefix, suffix[a + 1]);
+            int nVal = array[i].fillArray(domainValues);
+            for (int j = 0; j < nVal; j++) {
+                int v = domainValues[j];
+                setLocalBelief(i, v, z.contains(v)
+                        ? beliefRep.add(others, beliefRep.multiply(outsideBelief(yPos, i), outsideBelief(zPos, v)))
+                        : others);
+            }
+            prefix = beliefRep.add(prefix, weighted[a]);
+        }
+        // array[i] with i outside D(y): its values equally support every solution
+        for (int i = 0; i < array.length; i++) {
+            if (!y.contains(i)) {
+                int nVal = array[i].fillArray(domainValues);
+                for (int j = 0; j < nVal; j++)
                     setLocalBelief(i, domainValues[j], beliefRep.one()); // will be normalized
-                }
             }
         }
     }
