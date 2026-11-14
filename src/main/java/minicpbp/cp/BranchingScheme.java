@@ -1109,6 +1109,7 @@ public final class BranchingScheme {
         // array order over x, not by the engine's registration order.
         x[0].getSolver().setBranchingOrder(x);
         return () -> {
+            if (minicpbp.util.TieStats.ON) minicpbp.util.TieStats.record(x);
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
                     xi -> minicpbp.util.Perturb.domWdeg(xi));
