@@ -534,6 +534,51 @@ public class MiniCP implements Solver {
     private static final boolean ROOT_AT_ENTROPY = "entropy".equals(System.getProperty("minicpbp.bp.rootAt"));
     private IntVar entropyRoot;
 
+    /* min-entropy-pre (RESEARCH_PLAN.md, "Min-entropy comparison"): the variable is chosen BEFORE this node's BP, by
+     * min entropy over the marginals present then (the last BP's on the path, normalized over the current domains),
+     * BP is rooted at it (with rootAtDecision), and the value is the max marginal after BP. */
+    private boolean preVarOn = false;
+    private IntVar preBPVar;
+    private long preBPCall = -1;
+    private int[] entBuf = new int[0];
+
+    @Override
+    public void enablePreBPVar() { preVarOn = true; }
+
+    @Override
+    public IntVar preBPDecisionVar() {
+        return preBPCall == minicpbp.util.BPStats.calls && preBPVar != null && preBPVar.size() > 1 ? preBPVar : null;
+    }
+
+    /** entropy of v's marginal normalized over its current domain (uniform when it carries no mass) */
+    private double normalizedEntropy(IntVar v) {
+        if (entBuf.length < v.size()) entBuf = new int[Math.max(v.size(), 2 * entBuf.length)];
+        int s = v.fillArray(entBuf);
+        double z = 0;
+        for (int j = 0; j < s; j++) z += Math.max(0, beliefRep.rep2std(v.marginal(entBuf[j])));
+        if (!(z > 0)) return Math.log(s);
+        double h = 0;
+        for (int j = 0; j < s; j++) {
+            double p = Math.max(0, beliefRep.rep2std(v.marginal(entBuf[j]))) / z;
+            if (p > 0) h -= p * Math.log(p);
+        }
+        return h;
+    }
+
+    /** min normalized entropy over the unbound branching variables, ties to branching order */
+    private IntVar normalizedEntropyVar() {
+        IntVar best = null;
+        double bestE = Double.MAX_VALUE;
+        if (branchingOrder != null) {
+            for (IntVar v : branchingOrder) {
+                if (v.size() <= 1) continue;
+                double e = normalizedEntropy(v);
+                if (e < bestE) { bestE = e; best = v; }
+            }
+        }
+        return best;
+    }
+
     /** the unbound branching variable of smallest marginal entropy, ties to branching order (as minEntropy) */
     public IntVar entropyDecisionVar() {
         IntVar best = null;
@@ -1015,6 +1060,7 @@ public class MiniCP implements Solver {
         }
         potentialTrigger++;
         if (!forceRun) nodeCalls++;
+        if (preVarOn && !forceRun) { preBPVar = normalizedEntropyVar(); preBPCall = minicpbp.util.BPStats.calls + 1; }
         if (lastBPNode == null) lastBPNode = sm.makeStateInt(0);
         minicpbp.util.BPStats.calls++;
         // Probe K (BP_PROBE_PROTOCOL.md amendment 7): the decision-keyed
@@ -1082,7 +1128,7 @@ public class MiniCP implements Solver {
             // rebuild inside beginInvocation consumes it. wdeg's inputs do not
             // move during sweeps, so one computation per invocation is exact.
             if (minicpbp.util.BPConfig.ROOT_AT_DECISION)
-                bpGraph().setPreferredRoot(ROOT_AT_ENTROPY ? entropyRoot : wdegDecisionVar());
+                bpGraph().setPreferredRoot(ROOT_AT_ENTROPY ? entropyRoot : preVarOn ? preBPVar : wdegDecisionVar());
             // the seeding must read the watermark of the PREVIOUS invocation on
             // this path, so the update below happens after beginInvocation
             sched.beginInvocation(fullDirty);

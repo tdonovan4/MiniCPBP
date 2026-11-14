@@ -574,6 +574,36 @@ public final class BranchingScheme {
     }
 
     /**
+     * Min entropy with the variable chosen before BP (min-entropy-pre): the solver records, at each BP call, the
+     * unbound variable of smallest entropy over the marginals present before BP (normalized over the current domain);
+     * BP is rooted at it under rootAtDecision; the value is the max marginal after BP. Falls back to min entropy over
+     * the current marginals when no BP call recorded a variable at this node.
+     */
+    public static Supplier<Procedure[]> minEntropyPre(IntVar[] x) {
+        Belief beliefRep = x[0].getSolver().getBeliefRep();
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        x[0].getSolver().enablePreBPVar();
+        return () -> {
+            IntVar pre = x[0].getSolver().preBPDecisionVar();
+            IntVar xs = pre != null ? pre : selectMin(x, xi -> xi.size() > 1, xi -> xi.entropy());
+            if (xs == null)
+                return EMPTY;
+            int v = xs.valueWithMaxMarginal();
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), v, "marginal=" + beliefRep.rep2std(xs.maxMarginal()), "entropy=" + xs.entropy());
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), v);
+                        branchNotEqual(xs, v);
+                    });
+        };
+    }
+
+    /**
      * Minimum entropy strategy with random tie breaking.
      * It selects an unbound variable with the smallest entropy
      * of its marginal distribution.

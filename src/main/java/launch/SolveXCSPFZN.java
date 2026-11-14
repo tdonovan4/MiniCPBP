@@ -46,6 +46,7 @@ public class SolveXCSPFZN {
 		MXM, // maximum marginal
 		MNM, // minimum marginal
 		MNE, //minimum entropy
+		MNEPRE, //minimum entropy over the marginals before BP, BP rooted there, value by max marginal after BP
 		MNERTB, //minimum entropy, uniform random tie-break among equal-entropy variables (probe N, BP_PROBE_PROTOCOL amendments 10/10a)
 		IE, //impact entropy
 		MIE, //min-entropy followed by impact entropy after first restart,
@@ -68,6 +69,7 @@ public class SolveXCSPFZN {
 			put("min-marginal", BranchingHeuristic.MNM);
 			put("min-entropy", BranchingHeuristic.MNE);
 			put("min-entropy-rtb", BranchingHeuristic.MNERTB);
+			put("min-entropy-pre", BranchingHeuristic.MNEPRE);
 			put("impact-entropy", BranchingHeuristic.IE);
 			put("impact-min-entropy", BranchingHeuristic.MIE);
 			put("min-entropy-biased", BranchingHeuristic.MNEBW);
@@ -203,6 +205,9 @@ public class SolveXCSPFZN {
 					break;
 				case MNE:
 					search = makeSearch(phased(decisionsVars, vs -> minEntropy(vs)));
+					break;
+				case MNEPRE:
+					search = makeSearch(phased(decisionsVars, vs -> minEntropyPre(vs)));
 					break;
 				case MNERTB:
 					// probe N (BP_PROBE_PROTOCOL amendments 10/10a): min entropy with a

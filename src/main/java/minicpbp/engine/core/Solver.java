@@ -293,6 +293,12 @@ public interface Solver {
      */
     void setBranchingOrder(IntVar[] x);
 
+    /** min-entropy-pre: record, at each BP call, the min-entropy variable over the marginals present before BP */
+    default void enablePreBPVar() { }
+
+    /** the variable recorded by the last BP call at this node (unbound), or null */
+    default IntVar preBPDecisionVar() { return null; }
+
     /**
      * Gates belief propagation on the variable dom/wdeg will branch on: at a
      * node where the gate rejects that variable, BP is not run. Null removes
