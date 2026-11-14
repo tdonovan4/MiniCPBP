@@ -365,12 +365,16 @@ public class SolveXCSPFZN {
 					// an exhaustive search, min value + plain DFS with BP off, from scratch for the rest of the budget,
 					// with fresh dom/wdeg weights unless minicpbp.combo.carryWeights=true
 					double switchFrac = Double.parseDouble(System.getProperty("minicpbp.combo.switchFrac", "0"));
-					boolean combo = switchFrac > 0 || Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
+					// minicpbp.combo.failBudgetPerVar=c: phase 1 also ends after c x (number of decision variables)
+					// failures (a deterministic cost budget, scaled like the restart cutoffs)
+					double failPerVar = Double.parseDouble(System.getProperty("minicpbp.combo.failBudgetPerVar", "0"));
+					long failBudget = failPerVar > 0 ? (long) (failPerVar * decisionsVars.length) : Long.MAX_VALUE;
+					boolean combo = switchFrac > 0 || failPerVar > 0 || Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
 					if (!combo) {
 						stats = search.solve(limit);
 					} else {
 						long switchAt = t0 + (long) ((switchFrac > 0 ? switchFrac : 1.0) * timeout * 1000L);
-						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt));
+						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget));
 						long tSwitch = System.currentTimeMillis() - t0;
 						if (!foundSolution.get() && !stats.isCompleted() && !limit.test(stats)) {
 							minicp.setMode(Solver.PropaMode.SP);
