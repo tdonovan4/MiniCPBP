@@ -67,37 +67,7 @@ public class TableCT extends AbstractConstraint {
      *              The second dimension must be of the same size as the array x.
      */
     public TableCT(IntVar[] x, int[][] table) {
-        super(x[0].getSolver(), x);
-        setName("TableCT");
-        this.x = x;
-        this.xLength = x.length;
-        this.table = table;
-        this.tableLength = table.length;
-        ofs = new int[xLength];
-        supportedTuples = new BitSet(tableLength);
-        supporti = new BitSet(tableLength);
-
-        // Allocate supports and beliefs
-        supports = new BitSet[xLength][];
-        beliefs = new double[xLength][];
-        for (int i = 0; i < xLength; i++) {
-            ofs[i] = x[i].min(); // offsets map the variables' domain to start at 0 for supports[][] and beliefs[][]
-            supports[i] = new BitSet[x[i].max() - x[i].min() + 1];
-            beliefs[i] = new double[x[i].max() - x[i].min() + 1];
-            for (int j = 0; j < supports[i].length; j++) {
-                supports[i][j] = new BitSet();
-            }
-        }
-
-        // Set values in supports, which contains all the tuples supported by each var-val pair
-        for (int i = 0; i < tableLength; i++) { //i is the index of the tuple (in table)
-            for (int j = 0; j < xLength; j++) { //j is the index of the current variable (in x)
-                if (x[j].contains(table[i][j])) {
-                    supports[j][table[i][j] - ofs[j]].set(i);
-                }
-            }
-        }
-        setExactWCounting(true);
+        this(x, table, table.length);
     }
 
     /**
@@ -119,27 +89,43 @@ public class TableCT extends AbstractConstraint {
         supportedTuples = new BitSet(tableLength);
         supporti = new BitSet(tableLength);
 
-        // Allocate supports and beliefs
+        // supports[i][v]: the tuples supported by x[i]=v; beliefs are per constraint
         supports = new BitSet[xLength][];
         beliefs = new double[xLength][];
-        for (int i = 0; i < xLength; i++) {
-            ofs[i] = x[i].min(); // offsets map the variables' domain to start at 0 for supports[][] and beliefs[][]
-            supports[i] = new BitSet[x[i].max() - x[i].min() + 1];
-            beliefs[i] = new double[x[i].max() - x[i].min() + 1];
-            for (int j = 0; j < supports[i].length; j++) {
-                supports[i][j] = new BitSet();
-            }
-        }
-
-        // Set values in supports, which contains all the tuples supported by each var-val pair
-        for (int i = 0; i < tableLength; i++) { //i is the index of the tuple (in table)
-            for (int j = 0; j < xLength; j++) { //j is the index of the current variable (in x)
-                if (x[j].contains(table[i][j])) {
-                    supports[j][table[i][j] - ofs[j]].set(i);
-                }
-            }
+        for (int j = 0; j < xLength; j++) {
+            ofs[j] = x[j].min(); // offsets map the variables' domain to start at 0 for supports[][] and beliefs[][]
+            beliefs[j] = new double[x[j].max() - x[j].min() + 1];
+            supports[j] = columnSupports(x[j], j);
         }
         setExactWCounting(true);
+    }
+
+    /* Supports are read-only after construction, so constraints posted on the same table (an XCSP group posts
+     * thousands of them on one relation) share them per column. Key: the table's identity (WeakHashMap on an array
+     * compares by identity), the column, the tuple count, the domain bounds and the exact set of values in the
+     * domain (propagation while posting leaves holes), which is all the supports depend on. Unshared, 2,558 binary
+     * constraints on one table of 7,718 tuples over domains of 1,296 values need about 4.3 GB (Subisomorphism-si6,
+     * TOPORT.md item 5). */
+    private static final java.util.Map<int[][], java.util.Map<java.util.List<Object>, BitSet[]>> SHARED_SUPPORTS =
+            new java.util.WeakHashMap<>();
+    public static long sharedSupportHits; // columns served from SHARED_SUPPORTS (exp.TableShareCheck)
+
+    private BitSet[] columnSupports(IntVar v, int j) {
+        int lo = v.min(), n = v.max() - lo + 1;
+        BitSet dom = new BitSet(n);
+        for (int k = 0; k < n; k++) if (v.contains(lo + k)) dom.set(k);
+        java.util.List<Object> key = java.util.Arrays.asList(j, tableLength, lo, n, dom);
+        java.util.Map<java.util.List<Object>, BitSet[]> byCol = SHARED_SUPPORTS.computeIfAbsent(table, t -> new java.util.HashMap<>());
+        BitSet[] cached = byCol.get(key);
+        if (cached != null) { sharedSupportHits++; return cached; }
+        BitSet[] col = new BitSet[n];
+        for (int k = 0; k < n; k++) col[k] = new BitSet();
+        for (int i = 0; i < tableLength; i++) { // i is the index of the tuple (in table)
+            int val = table[i][j];
+            if (v.contains(val)) col[val - lo].set(i);
+        }
+        byCol.put(key, col);
+        return col;
     }
 
     @Override
