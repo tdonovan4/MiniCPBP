@@ -72,13 +72,14 @@ public class LDSearch extends Search{
         this.rootDomainSizeProbe = p;
     }
 
-    /** per-pass "cap:nodes:failures:solutions:rootDomainSizeSum" joined by ';' */
+    /** per-pass "cap:nodes:failures:solutions:rootDomainSizeSum:propagationsAtEnd:factorUpdatesAtEnd" joined by ';'
+     *  (the last two cumulative since the start of the run: deterministic work at the end of each pass) */
     public String passSummary() {
         StringBuilder sb = new StringBuilder();
         for (long[] p : passStats) {
             if (sb.length() > 0) sb.append(';');
             sb.append(p[0]).append(':').append(p[1]).append(':').append(p[2]).append(':').append(p[3])
-              .append(':').append(p[4]);
+              .append(':').append(p[4]).append(':').append(p[5]).append(':').append(p[6]);
         }
         return sb.toString();
     }
@@ -327,13 +328,15 @@ public class LDSearch extends Search{
         long f0 = statistics.numberOfFailures();
         long s0 = statistics.numberOfSolutions();
         long rootDom = (rootDomainSizeProbe == null) ? -1 : rootDomainSizeProbe.getAsInt();
-        long[] row = {cap, 0, 0, 0, rootDom};
+        long[] row = {cap, 0, 0, 0, rootDom, 0, 0};
         passStats.add(row);
         try {
             lds(statistics, limit);
         } finally {
             row[1] = statistics.numberOfNodes() - n0;
             row[2] = statistics.numberOfFailures() - f0;
+            row[5] = minicpbp.engine.core.MiniCP.propagations;
+            row[6] = minicpbp.util.BPStats.factorUpdates;
             row[3] = statistics.numberOfSolutions() - s0;
             if (Boolean.getBoolean("minicpbp.lds.trace"))
                 System.err.println("LDS pass cap=" + cap + " nodes=" + row[1]

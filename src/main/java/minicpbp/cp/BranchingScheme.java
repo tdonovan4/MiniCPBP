@@ -963,7 +963,7 @@ public final class BranchingScheme {
             return () -> {
                 IntVar xs = selectMin(x,
                         xi -> xi.size() > 1,
-                        xi -> ((double) xi.size())/((double) xi.wDeg()));
+                        xi -> minicpbp.util.Perturb.domWdeg(xi));
                 if (xs == null)
                     return EMPTY;
                 else {
@@ -1010,7 +1010,7 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             else {
@@ -1081,11 +1081,11 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             else {
-                int v0 = xs.valueWithMaxMarginal();
+                int v0 = minicpbp.util.Perturb.argmaxMarginal(xs);
                 int v = (minicpbp.util.ValueDiag.ON || minicpbp.util.ValueDiag.FLAT_MIN > 0)
                         ? diagnoseValue(xs, v0) : v0;
                 return branch(
@@ -1118,7 +1118,7 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             int v = backoff.value(xs);
@@ -1150,7 +1150,7 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             int v = cache.value(xs);
@@ -1185,7 +1185,7 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             boolean bp = gate.test(xs);
@@ -1229,7 +1229,7 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+                    xi -> minicpbp.util.Perturb.domWdeg(xi));
             if (xs == null)
                 return EMPTY;
             int n = xs.fillArray(values);

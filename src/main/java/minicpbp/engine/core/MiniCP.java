@@ -438,6 +438,7 @@ public class MiniCP implements Solver {
             while(!propagationQueue.isEmpty()) {
                 Constraint c = propagationQueue.remove();
                 propagations++;
+                long tp = PROP_PROFILE ? System.nanoTime() : 0;
                 try {
                     propagate(c);
                 }
@@ -448,6 +449,13 @@ public class MiniCP implements Solver {
                     while (!propagationQueue.isEmpty())
                         propagationQueue.remove().setScheduled(false);
                     throw e;
+                }
+                finally {
+                    if (PROP_PROFILE) {
+                        long[] e2 = propProfile.computeIfAbsent(c.getClass(), k -> new long[2]);
+                        e2[0]++;
+                        e2[1] += System.nanoTime() - tp;
+                    }
                 }
 
             }
@@ -529,6 +537,18 @@ public class MiniCP implements Solver {
     public static long stage3Skips, stage3Forced; // counters for the .stats output
     /** propagator executions so far: a deterministic, machine-independent work measure (combined-search budgets) */
     public static long propagations;
+    /* propagation profile (-Dminicpbp.calib.propProfile=true): per constraint class, executions and nanoseconds,
+     * to derive per-class weights for a deterministic-time budget (the timing adds overhead: profile runs only) */
+    private static final boolean PROP_PROFILE = Boolean.getBoolean("minicpbp.calib.propProfile");
+    private static final java.util.Map<Class<?>, long[]> propProfile = new java.util.HashMap<>();
+    public static String propProfileSummary() {
+        StringBuilder b = new StringBuilder();
+        for (java.util.Map.Entry<Class<?>, long[]> e : propProfile.entrySet()) {
+            if (b.length() > 0) b.append(';');
+            b.append(e.getKey().getSimpleName()).append(':').append(e.getValue()[0]).append(':').append(e.getValue()[1]);
+        }
+        return b.toString();
+    }
     /** the branching variable the last BP on the path was rooted at (trailed) */
     private minicpbp.state.State<IntVar> lastBPRoot;
 
@@ -1597,7 +1617,7 @@ public class MiniCP implements Solver {
         if (branchingOrder != null) {
             for (IntVar v : branchingOrder) {
                 if (v.size() <= 1) continue; // selectMin's predicate: unbound
-                double s = ((double) v.size()) / ((double) v.wDeg());
+                double s = minicpbp.util.Perturb.domWdeg(v);
                 if (s < bestScore) {
                     bestScore = s;
                     best = v;
@@ -1608,7 +1628,7 @@ public class MiniCP implements Solver {
             while (iterator.hasNext()) {
                 IntVar v = iterator.next();
                 if (v.isBound() || !v.isForBranching()) continue;
-                double s = ((double) v.size()) / ((double) v.wDeg());
+                double s = minicpbp.util.Perturb.domWdeg(v);
                 if (s < bestScore) {
                     bestScore = s;
                     best = v;
