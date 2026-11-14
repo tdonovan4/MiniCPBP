@@ -425,6 +425,21 @@ public class SolveXCSPFZN {
 						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget
 								|| minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w0 >= work));
 						long tSwitch = System.currentTimeMillis() - t0;
+						// minicpbp.combo.mneWork=W (phase 2b, RESEARCH_PLAN.md "Min-entropy comparison"): before the
+						// exhaustive phase, min entropy under the same search (LDS, same pass budget) from scratch, BP on,
+						// for W work units (propagations + BP factor updates): a blind try at min entropy's niche
+						long mneWork = Long.getLong("minicpbp.combo.mneWork", 0L);
+						if (mneWork > 0 && !foundSolution.get() && !stats.isCompleted() && !limit.test(stats)) {
+							long w2 = minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates;
+							Search phase2b = makeSearch(phased(decisionsVars, vs -> minEntropy(vs)));
+							phase2b.onSolution(onSol2);
+							SearchStatistics s2b = phase2b.solve(limit.or(ss ->
+									minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w2 >= mneWork));
+							boolean decided2b = foundSolution.get() || s2b.isCompleted();
+							System.err.println("c combo: phase 2b (min entropy) " + s2b.numberOfNodes() + " nodes, "
+									+ (System.currentTimeMillis() - t0) + " ms" + (decided2b ? ", decided" : ""));
+							if (decided2b || limit.test(s2b)) stats = s2b;
+						}
 						if (!foundSolution.get() && !stats.isCompleted() && !limit.test(stats)) {
 							minicp.setMode(Solver.PropaMode.SP);
 							if (!Boolean.getBoolean("minicpbp.combo.carryWeights")) {

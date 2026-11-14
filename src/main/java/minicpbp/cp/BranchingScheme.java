@@ -555,11 +555,11 @@ public final class BranchingScheme {
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
-                    xi -> xi.entropy());
+                    xi -> minicpbp.util.Perturb.entropy(xi));
             if (xs == null)
                 return EMPTY;
             else {
-                int v = xs.valueWithMaxMarginal();
+                int v = minicpbp.util.Perturb.argmaxMarginal(xs);
                 return branch(
                         () -> {
                             Log.branchEqual(xs.getName(), v, "marginal=" + beliefRep.rep2std(xs.maxMarginal()), "entropy=" + xs.entropy());

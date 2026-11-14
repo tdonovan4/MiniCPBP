@@ -5,7 +5,8 @@ import minicpbp.engine.core.IntVar;
 /**
  * Noise-floor perturbation (data_thomas/CLUSTER_PLAN.md, C2): with -Dminicpbp.perturb.seed=k (k != 0), the dom/wdeg
  * score of each variable is multiplied by a fixed factor 1 + eps*u (u in [-1, 1) from the seed and the variable's
- * name), and BP's max-marginal value choice compares marginals multiplied by 1 + eps*u(variable, value). With
+ * name), min entropy's variable choice compares entropies plus eps*u, and BP's max-marginal value choice compares
+ * marginals multiplied by 1 + eps*u(variable, value). With
  * eps = 1e-9 (default, -Dminicpbp.perturb.eps) this changes essentially only how exact ties are broken, so the
  * spread over seeds measures the trajectory chaos of one configuration. Deterministic for a given seed.
  */
@@ -31,6 +32,12 @@ public final class Perturb {
     public static double domWdeg(IntVar x) {
         double s = ((double) x.size()) / ((double) x.wDeg());
         return ON ? s * (1 + EPS * u(key(x), 17)) : s;
+    }
+
+    /** marginal entropy, perturbed additively when ON (entropies near 0 are common), for min entropy's variable choice */
+    public static double entropy(IntVar x) {
+        double e = x.entropy();
+        return ON ? e + EPS * u(key(x), 29) : e;
     }
 
     /** max-marginal value, comparing perturbed marginals; ties to the first in domain order, as valueWithMaxMarginal */
