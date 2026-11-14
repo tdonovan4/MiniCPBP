@@ -131,17 +131,26 @@ public class DFSearch extends Search{
     private SearchStatistics solveRestarts(SearchStatistics statistics, Predicate<SearchStatistics> limit, int nbFailsCutoff, final double restartFactor) {
         int cutoff = nbFailsCutoff;
         final int[] cumulCutoff = new int[]{cutoff};
+        // completed only when one run explores its whole tree without hitting a limit (as in solve);
+        // previously the loop set completed whenever it exited, so a timeout was reported as UNSAT,
+        // and an exhausted tree was not noticed (the loop kept restarting until the limit)
+        final boolean[] exhausted = {false};
         while (!limit.test(statistics)) {
 //            System.out.println("restart limit: "+cutoff+" fails");
             Predicate<SearchStatistics> restartLimit = limit.or(stat -> stat.numberOfFailures() > cumulCutoff[0]);
             sm.withNewState(() -> {
                 try {
 		            dfs(statistics, restartLimit);
+                    exhausted[0] = true;
                 } catch (StopSearchException ignored) {
                 } catch (StackOverflowError e) {
                     throw new NotImplementedException("dfs with explicit stack needed to pass this test");
                 }
             });
+            if (exhausted[0]) {
+                statistics.setCompleted();
+                break;
+            }
             if(branchingSecond != null) {
                 this.branching = this.branchingSecond;
                 this.branchingSecond = null;
@@ -149,7 +158,6 @@ public class DFSearch extends Search{
             cutoff *= restartFactor;
             cumulCutoff[0] += cutoff;
         }
-        statistics.setCompleted();
         return statistics;
     }
 
