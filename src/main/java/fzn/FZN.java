@@ -117,6 +117,9 @@ public class FZN extends ModelFormatFrontend {
 			if(m.getGoal() != ASTSolve.SAT)
 				Log.info("%%%mzn-stat: objective=" + m.getObjective().min());
 			Log.info("%%%mzn-stat: nodes=" + stats.numberOfNodes());
+			Log.info("%%%mzn-stat: discrepancy=" + solutionDiscrepancy);
+			if (!ldsPasses.isEmpty())
+				Log.info("%%%mzn-stat: ldsPasses=" + ldsPasses);
 			Log.info("%%%mzn-stat: solveTime=" + runtime);
 			Log.info("%%%mzn-stat-end");
 		}
