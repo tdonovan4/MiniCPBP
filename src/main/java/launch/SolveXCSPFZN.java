@@ -393,8 +393,9 @@ public class SolveXCSPFZN {
 								+ (System.currentTimeMillis() - t0) + " ms" + (foundSolution.get() || stats.isCompleted() ? ", decided" : ""));
 						if (!foundSolution.get() && !stats.isCompleted()) {
 							minicp.setMode(mode0);
+							// minicpbp.combo.carryWeights1=true keeps phase 1's dom/wdeg weights for the BP phase
 							Iterator<minicpbp.engine.core.Constraint> it0 = minicp.getConstraints().iterator();
-							while (it0.hasNext()) {
+							while (!Boolean.getBoolean("minicpbp.combo.carryWeights1") && it0.hasNext()) {
 								minicpbp.engine.core.Constraint c = it0.next();
 								if (c instanceof minicpbp.engine.core.AbstractConstraint)
 									((minicpbp.engine.core.AbstractConstraint) c).resetFailureCount();
