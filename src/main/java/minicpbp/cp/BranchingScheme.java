@@ -21,6 +21,7 @@ package minicpbp.cp;
 import minicpbp.engine.core.Constraint;
 import minicpbp.engine.core.IntVar;
 import minicpbp.engine.core.Solver;
+import minicpbp.util.exception.InconsistencyException;
 import minicpbp.engine.core.Solver.ConstraintWeighingScheme;
 import minicpbp.search.LimitedDiscrepancyBranching;
 import minicpbp.search.Sequencer;
@@ -570,6 +571,179 @@ public final class BranchingScheme {
                             branchNotEqual(xs, v);
                         });
             }
+        };
+    }
+
+    /* ---- state-of-the-art value baselines under dom/wdeg (CLUSTER_PLAN.md C9) ---- */
+
+    private static double logSearchSize(IntVar[] x) {
+        double s = 0;
+        for (IntVar v : x) s += Math.log(v.size());
+        return s;
+    }
+
+    private static IntVar domWdegVar(IntVar[] x) {
+        return selectMin(x, xi -> xi.size() > 1, xi -> minicpbp.util.Perturb.domWdeg(xi));
+    }
+
+    /**
+     * dom/wdeg with impact-based value selection (dom-wdeg-impact-value; Refalo, CP 2004): the value whose past
+     * assignments reduced the search space least (smallest mean impact, impact = 1 - size after / size before the
+     * propagation of x = v, sizes as products of the decision variables' domain sizes, computed in logarithms; a
+     * failure has impact 1). Impacts are learned during search and kept across backtracks (not trailed); an unseen
+     * value has impact 0, so each value is tried once before impacts rank it (lazy initialization). Ties to the
+     * smallest value.
+     */
+    public static Supplier<Procedure[]> domWdegImpactValue(IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        final java.util.IdentityHashMap<IntVar, java.util.HashMap<Integer, double[]>> impacts = new java.util.IdentityHashMap<>();
+        final int[] vals = new int[Math.max(1, java.util.Arrays.stream(x).mapToInt(IntVar::size).max().orElse(1))];
+        return () -> {
+            IntVar xs = domWdegVar(x);
+            if (xs == null)
+                return EMPTY;
+            java.util.HashMap<Integer, double[]> imp = impacts.computeIfAbsent(xs, k -> new java.util.HashMap<>());
+            int n = xs.fillArray(vals);
+            int v = Integer.MAX_VALUE;
+            double best = Double.MAX_VALUE;
+            for (int q = 0; q < n; q++) {
+                double[] r = imp.get(vals[q]);
+                double m = r == null ? 0.0 : r[0] / r[1];
+                if (m < best || (m == best && vals[q] < v)) { best = m; v = vals[q]; }
+            }
+            final int val = v;
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), val);
+                        double before = logSearchSize(x);
+                        double[] r = imp.computeIfAbsent(val, k -> new double[2]);
+                        try {
+                            branchEqual(xs, val);
+                        } catch (InconsistencyException e) {
+                            r[0] += 1.0; r[1] += 1;
+                            throw e;
+                        }
+                        r[0] += 1.0 - Math.exp(logSearchSize(x) - before); r[1] += 1;
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), val);
+                        branchNotEqual(xs, val);
+                    });
+        };
+    }
+
+    /**
+     * dom/wdeg with look-ahead "promise" value selection (dom-wdeg-promise; Geelen, ECAI 1992): for each value, x = v
+     * is propagated in a saved state and scored by the logarithm of the product of the decision variables' domain
+     * sizes left (a failing value scores minus infinity); the best is chosen, ties to the smallest value. Probe
+     * failures do not feed dom/wdeg's weights (MiniCP.countFailures). Costs one propagation per value per node.
+     */
+    public static Supplier<Procedure[]> domWdegPromiseValue(IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        Solver cp = x[0].getSolver();
+        final int[] vals = new int[Math.max(1, java.util.Arrays.stream(x).mapToInt(IntVar::size).max().orElse(1))];
+        return () -> {
+            IntVar xs = domWdegVar(x);
+            if (xs == null)
+                return EMPTY;
+            int n = xs.fillArray(vals);
+            java.util.Arrays.sort(vals, 0, n);
+            int v = vals[0];
+            double best = Double.NEGATIVE_INFINITY;
+            minicpbp.engine.core.MiniCP.countFailures = false;
+            try {
+                for (int q = 0; q < n; q++) {
+                    double score;
+                    cp.getStateManager().saveState();
+                    try {
+                        xs.assign(vals[q]);
+                        cp.fixPoint();
+                        score = logSearchSize(x);
+                    } catch (InconsistencyException e) {
+                        score = Double.NEGATIVE_INFINITY;
+                    } finally {
+                        cp.getStateManager().restoreState();
+                    }
+                    if (score > best) { best = score; v = vals[q]; }
+                }
+            } finally {
+                minicpbp.engine.core.MiniCP.countFailures = true;
+            }
+            final int val = v;
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), val);
+                        branchEqual(xs, val);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), val);
+                        branchNotEqual(xs, val);
+                    });
+        };
+    }
+
+    /**
+     * dom/wdeg with maxSD value selection (dom-wdeg-maxsd; Pesant, Quimper and Zanarini, JAIR 2012): the value with the
+     * highest solution density in any constraint on x. Run with BP at every node, cold, flood schedule, one
+     * iteration (-Dminicpbp.debug.alwaysRunBP=true -Dminicpbp.bp.schedule=flood -Dexp.maxIter=1): each constraint's
+     * message is then computed from uniform incoming messages, i.e. its solution densities; they are read per
+     * constraint, normalized over x's domain, and the maximum over constraints is taken (BP's own marginal would be
+     * their product). Views are handled by the constraint's own contribution to x's marginal, read in a saved
+     * state. Falls back to the smallest value when no constraint answers.
+     * Requires BP to run cold at every node, as configured: resetting x's marginal also resets its untrailed
+     * zero-count arrays, which the next cold BP rebuilds.
+     */
+    public static Supplier<Procedure[]> domWdegMaxSDValue(IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        Solver cp = x[0].getSolver();
+        final int[] vals = new int[Math.max(1, java.util.Arrays.stream(x).mapToInt(IntVar::size).max().orElse(1))];
+        final double[] best = new double[vals.length], msg = new double[vals.length];
+        return () -> {
+            IntVar xs = domWdegVar(x);
+            if (xs == null)
+                return EMPTY;
+            int n = xs.fillArray(vals);
+            java.util.Arrays.fill(best, 0, n, 0.0);
+            IntVar base = xs.getBaseVar();
+            minicpbp.util.Belief rep = cp.getBeliefRep();
+            minicpbp.state.StateStack<Constraint> all = cp.getConstraints();
+            for (int ci = 0, nc = all.size(); ci < nc; ci++) {
+                Constraint c = all.get(ci);
+                if (!c.isActive() || !c.bpParticipant() || !(c instanceof minicpbp.engine.core.AbstractConstraint)) continue;
+                boolean in = false;
+                for (IntVar sv : c.getScope()) if (sv.getBaseVar() == base) { in = true; break; }
+                if (!in) continue;
+                // this constraint's message alone, mapped through views onto x's values: x's marginal reset to one,
+                // then multiplied by the constraint's messages only, in a saved state
+                cp.getStateManager().saveState();
+                try {
+                    base.resetMarginals();
+                    ((minicpbp.engine.core.AbstractConstraint) c).contributeMarginal(base);
+                    double z = 0;
+                    for (int q = 0; q < n; q++) z += msg[q] = Math.max(0, rep.rep2std(xs.marginal(vals[q])));
+                    if (z > 0) for (int q = 0; q < n; q++) best[q] = Math.max(best[q], msg[q] / z);
+                } finally {
+                    cp.getStateManager().restoreState();
+                }
+            }
+            int v = Integer.MAX_VALUE;
+            double b = 0;
+            for (int q = 0; q < n; q++) if (best[q] > b || (best[q] == b && vals[q] < v)) { b = best[q]; v = vals[q]; }
+            if (b <= 0) v = xs.min();
+            final int val = v;
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), val);
+                        branchEqual(xs, val);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), val);
+                        branchNotEqual(xs, val);
+                    });
         };
     }
 

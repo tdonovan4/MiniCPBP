@@ -444,7 +444,7 @@ public class MiniCP implements Solver {
                 }
                 catch(InconsistencyException e) {
                     // empty the queue and unset the scheduled status
-                    c.incrementFailureCount();
+                    if (countFailures) c.incrementFailureCount();
                     if (TOP_FRAC > 0 || !LDS_RULE.isEmpty()) { failLevelSum += sm.getLevel(); failCount++; }
                     while (!propagationQueue.isEmpty())
                         propagationQueue.remove().setScheduled(false);
@@ -696,6 +696,8 @@ public class MiniCP implements Solver {
     public static long stage3Skips, stage3Forced; // counters for the .stats output
     /** propagator executions so far: a deterministic, machine-independent work measure (combined-search budgets) */
     public static long propagations;
+    /** false while a value heuristic probes values (look-ahead): probe failures must not feed dom/wdeg's weights */
+    public static boolean countFailures = true;
     /* propagation profile (-Dminicpbp.calib.propProfile=true): per constraint class, executions and nanoseconds,
      * to derive per-class weights for a deterministic-time budget (the timing adds overhead: profile runs only) */
     private static final boolean PROP_PROFILE = Boolean.getBoolean("minicpbp.calib.propProfile");

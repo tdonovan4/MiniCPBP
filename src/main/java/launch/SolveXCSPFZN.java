@@ -46,6 +46,9 @@ public class SolveXCSPFZN {
 		MXM, // maximum marginal
 		MNM, // minimum marginal
 		MNE, //minimum entropy
+		WDEGIMP, //dom-wdeg variable, impact-based value (Refalo 2004), BP off
+		WDEGPROM, //dom-wdeg variable, look-ahead promise value (Geelen 1992), BP off
+		WDEGMAXSD, //dom-wdeg variable, maxSD value (Pesant et al. 2012) from one cold flood BP iteration
 		WDEGTB, //dom-wdeg variable, ties broken by min entropy over the marginals before BP (minicpbp.tb.tol), max-marginal value
 		MNEPRE, //minimum entropy over the marginals before BP, BP rooted there, value by max marginal after BP
 		MNERTB, //minimum entropy, uniform random tie-break among equal-entropy variables (probe N, BP_PROBE_PROTOCOL amendments 10/10a)
@@ -72,6 +75,9 @@ public class SolveXCSPFZN {
 			put("min-entropy-rtb", BranchingHeuristic.MNERTB);
 			put("min-entropy-pre", BranchingHeuristic.MNEPRE);
 			put("dom-wdeg-entropy-tie", BranchingHeuristic.WDEGTB);
+			put("dom-wdeg-impact-value", BranchingHeuristic.WDEGIMP);
+			put("dom-wdeg-promise", BranchingHeuristic.WDEGPROM);
+			put("dom-wdeg-maxsd", BranchingHeuristic.WDEGMAXSD);
 			put("impact-entropy", BranchingHeuristic.IE);
 			put("impact-min-entropy", BranchingHeuristic.MIE);
 			put("min-entropy-biased", BranchingHeuristic.MNEBW);
@@ -207,6 +213,20 @@ public class SolveXCSPFZN {
 					break;
 				case MNE:
 					search = makeSearch(phased(decisionsVars, vs -> minEntropy(vs)));
+					break;
+				case WDEGIMP:
+					minicp.setMode(Solver.PropaMode.SP);
+					search = makeSearch(phased(decisionsVars, vs -> domWdegImpactValue(vs)));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
+					break;
+				case WDEGPROM:
+					minicp.setMode(Solver.PropaMode.SP);
+					search = makeSearch(phased(decisionsVars, vs -> domWdegPromiseValue(vs)));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
+					break;
+				case WDEGMAXSD:
+					search = makeSearch(phased(decisionsVars, vs -> domWdegMaxSDValue(vs)));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case WDEGTB:
 					search = makeSearch(phased(decisionsVars, vs -> domWdegEntropyTieBreak(
