@@ -369,12 +369,48 @@ public class SolveXCSPFZN {
 					// failures (a deterministic cost budget, scaled like the restart cutoffs)
 					double failPerVar = Double.parseDouble(System.getProperty("minicpbp.combo.failBudgetPerVar", "0"));
 					long failBudget = failPerVar > 0 ? (long) (failPerVar * decisionsVars.length) : Long.MAX_VALUE;
-					boolean combo = switchFrac > 0 || failPerVar > 0 || Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
-					if (!combo) {
+					// minicpbp.combo.phase1Props=N: before the configured search, min + plain DFS with BP off for N
+					// propagator executions (three-phase schedule); minicpbp.combo.bpWork=W: the configured search also
+					// ends after W work units (propagations + BP factor updates) of its own. Both deterministic.
+					long phase1Props = Long.getLong("minicpbp.combo.phase1Props", 0L);
+					long bpWork = Long.getLong("minicpbp.combo.bpWork", 0L);
+					boolean combo = switchFrac > 0 || failPerVar > 0 || phase1Props > 0 || bpWork > 0
+							|| Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
+					Procedure onSol2 = () -> {
+						foundSolution.set(true);
+						solutionStrs.add(0, frontend.getSolutionStr(extractSolutionStr));
+					};
+					stats = null;
+					if (combo && phase1Props > 0) {
+						Solver.PropaMode mode0 = minicp.getMode();
+						minicp.setMode(Solver.PropaMode.SP);
+						Search phase1 = makeDfs(minicp, phased(decisionsVars, vs -> domWdeg(vs)));
+						phase1.onSolution(onSol2);
+						long p0 = minicpbp.engine.core.MiniCP.propagations;
+						stats = phase1.solve(limit.or(ss -> minicpbp.engine.core.MiniCP.propagations - p0 >= phase1Props));
+						System.err.println("c combo: phase 1 (min DFS) " + stats.numberOfNodes() + " nodes, "
+								+ (minicpbp.engine.core.MiniCP.propagations - p0) + " propagations, "
+								+ (System.currentTimeMillis() - t0) + " ms" + (foundSolution.get() || stats.isCompleted() ? ", decided" : ""));
+						if (!foundSolution.get() && !stats.isCompleted()) {
+							minicp.setMode(mode0);
+							Iterator<minicpbp.engine.core.Constraint> it0 = minicp.getConstraints().iterator();
+							while (it0.hasNext()) {
+								minicpbp.engine.core.Constraint c = it0.next();
+								if (c instanceof minicpbp.engine.core.AbstractConstraint)
+									((minicpbp.engine.core.AbstractConstraint) c).resetFailureCount();
+							}
+						}
+					}
+					if (stats != null && (foundSolution.get() || stats.isCompleted() || limit.test(stats))) {
+						// decided (or out of time) in phase 1
+					} else if (!combo) {
 						stats = search.solve(limit);
 					} else {
 						long switchAt = t0 + (long) ((switchFrac > 0 ? switchFrac : 1.0) * timeout * 1000L);
-						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget));
+						long w0 = minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates;
+						long work = bpWork > 0 ? bpWork : Long.MAX_VALUE;
+						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget
+								|| minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w0 >= work));
 						long tSwitch = System.currentTimeMillis() - t0;
 						if (!foundSolution.get() && !stats.isCompleted() && !limit.test(stats)) {
 							minicp.setMode(Solver.PropaMode.SP);
@@ -387,10 +423,7 @@ public class SolveXCSPFZN {
 								}
 							}
 							Search phase2 = makeDfs(minicp, phased(decisionsVars, vs -> domWdeg(vs)));
-							phase2.onSolution(() -> {
-								foundSolution.set(true);
-								solutionStrs.add(0, frontend.getSolutionStr(extractSolutionStr));
-							});
+							phase2.onSolution(onSol2);
 							int n1 = stats.numberOfNodes(), f1 = stats.numberOfFailures();
 							stats = phase2.solve(limit);
 							System.err.println("c combo: switched at " + tSwitch + " ms after " + n1 + " nodes / " + f1

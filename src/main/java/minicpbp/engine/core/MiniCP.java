@@ -437,6 +437,7 @@ public class MiniCP implements Solver {
         try {
             while(!propagationQueue.isEmpty()) {
                 Constraint c = propagationQueue.remove();
+                propagations++;
                 try {
                     propagate(c);
                 }
@@ -526,6 +527,8 @@ public class MiniCP implements Solver {
     private static final double TIME_CAP = Double.parseDouble(System.getProperty("minicpbp.bp.timeCap", "0"));
     private long capT0 = -1;
     public static long stage3Skips, stage3Forced; // counters for the .stats output
+    /** propagator executions so far: a deterministic, machine-independent work measure (combined-search budgets) */
+    public static long propagations;
     /** the branching variable the last BP on the path was rooted at (trailed) */
     private minicpbp.state.State<IntVar> lastBPRoot;
 
