@@ -425,6 +425,15 @@ public class SolveXCSPFZN {
 						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget
 								|| minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w0 >= work));
 						long tSwitch = System.currentTimeMillis() - t0;
+						// -Dminicpbp.debug.lateWeights=true (measurement runs only): at the end of the BP phase, print the
+						// concentration of dom/wdeg's failure counts and stop, skipping the later phases
+						if (Boolean.getBoolean("minicpbp.debug.lateWeights")) {
+							double[] w = minicpbp.util.TieStats.weightSummary(minicp);
+							boolean dec = foundSolution.get() || stats.isCompleted();
+							System.err.printf(java.util.Locale.ROOT, "c lateWeights decided=%d phase2Nodes=%d failures=%.0f failedShare=%.4f top10Share=%.4f failEntropy=%.4f%n",
+									dec ? 1 : 0, stats.numberOfNodes(), w[0], w[1], w[2], w[3]);
+							break;
+						}
 						// minicpbp.combo.mneWork=W (phase 2b, RESEARCH_PLAN.md "Min-entropy comparison"): before the
 						// exhaustive phase, min entropy under the same search (LDS, same pass budget) from scratch, BP on,
 						// for W work units (propagations + BP factor updates): a blind try at min entropy's niche

@@ -47,6 +47,13 @@ public final class TieStats {
         if (n == MAX || n % 50 == 0) weights(x[0].getSolver());
     }
 
+    /** {failures, failedShare, top10Share, failEntropy} of the current failure counts (late measurement at the end
+     *  of phase 2: SolveXCSPFZN, -Dminicpbp.debug.lateWeights=true) */
+    public static double[] weightSummary(minicpbp.engine.core.Solver cp) {
+        weights(cp);
+        return new double[]{failures, failedShare, top10Share, failEntropy};
+    }
+
     /** concentration of the failure counts over the constraints, as of this decision */
     private static void weights(minicpbp.engine.core.Solver cp) {
         java.util.ArrayList<Integer> f = new java.util.ArrayList<>();
