@@ -36,9 +36,13 @@ public class Trailer implements StateManager {
         Backup() {
         }
 
+        // as in MiniCP: newest first. An object is trailed again at the same
+        // level after a nested saveState/restoreState pair (magic changes on
+        // restore); only its oldest entry holds the enclosing level's value.
         void restore() {
-            for (StateEntry se : this)
-                se.restore();
+            //note that using for on a Stack gives the wrong order.
+            while (!isEmpty())
+                pop().restore();
         }
     }
 
