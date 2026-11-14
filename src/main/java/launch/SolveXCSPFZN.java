@@ -360,7 +360,39 @@ public class SolveXCSPFZN {
 				Predicate<SearchStatistics> limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || (!enumerateSolutions && foundSolution.get()));
 				//find a solution that satisfies all constraints without restart
 				if(!restart) {
-					stats = search.solve(limit);
+					// combined search (RESEARCH_PLAN.md, "P4b/P4c"): phase 1 is the configured search, cut after
+					// minicpbp.combo.switchFrac of the time budget (and/or by minicpbp.lds.maxPassBudget); phase 2 is
+					// an exhaustive search, min value + plain DFS with BP off, from scratch for the rest of the budget,
+					// with fresh dom/wdeg weights unless minicpbp.combo.carryWeights=true
+					double switchFrac = Double.parseDouble(System.getProperty("minicpbp.combo.switchFrac", "0"));
+					boolean combo = switchFrac > 0 || Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
+					if (!combo) {
+						stats = search.solve(limit);
+					} else {
+						long switchAt = t0 + (long) ((switchFrac > 0 ? switchFrac : 1.0) * timeout * 1000L);
+						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt));
+						long tSwitch = System.currentTimeMillis() - t0;
+						if (!foundSolution.get() && !stats.isCompleted() && !limit.test(stats)) {
+							minicp.setMode(Solver.PropaMode.SP);
+							if (!Boolean.getBoolean("minicpbp.combo.carryWeights")) {
+								Iterator<minicpbp.engine.core.Constraint> it = minicp.getConstraints().iterator();
+								while (it.hasNext()) {
+									minicpbp.engine.core.Constraint c = it.next();
+									if (c instanceof minicpbp.engine.core.AbstractConstraint)
+										((minicpbp.engine.core.AbstractConstraint) c).resetFailureCount();
+								}
+							}
+							Search phase2 = makeDfs(minicp, phased(decisionsVars, vs -> domWdeg(vs)));
+							phase2.onSolution(() -> {
+								foundSolution.set(true);
+								solutionStrs.add(0, frontend.getSolutionStr(extractSolutionStr));
+							});
+							int n1 = stats.numberOfNodes(), f1 = stats.numberOfFailures();
+							stats = phase2.solve(limit);
+							System.err.println("c combo: switched at " + tSwitch + " ms after " + n1 + " nodes / " + f1
+									+ " failures; phase 2 " + stats.numberOfNodes() + " nodes");
+						}
+					}
 				}
 				//find a solution that satisfies all constraints with restarts during the search
 				else {

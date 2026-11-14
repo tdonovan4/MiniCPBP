@@ -175,6 +175,11 @@ public abstract class AbstractConstraint implements Constraint {
 		return failureCount;
 	}
 
+	/** forget the dom/wdeg weight learned so far (combined search: fresh weights for its exhaustive phase) */
+	public void resetFailureCount() {
+		failureCount = 0;
+	}
+
     public void post() {}
 
     public Solver getSolver() {

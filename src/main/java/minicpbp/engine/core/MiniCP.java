@@ -443,7 +443,7 @@ public class MiniCP implements Solver {
                 catch(InconsistencyException e) {
                     // empty the queue and unset the scheduled status
                     c.incrementFailureCount();
-                    if (TOP_FRAC > 0) { failLevelSum += sm.getLevel(); failCount++; }
+                    if (TOP_FRAC > 0 || !LDS_RULE.isEmpty()) { failLevelSum += sm.getLevel(); failCount++; }
                     while (!propagationQueue.isEmpty())
                         propagationQueue.remove().setScheduled(false);
                     throw e;
@@ -517,6 +517,12 @@ public class MiniCP implements Solver {
      * (self-calibrating depth scale; topDepth uses the number of branching variables instead) */
     private static final double TOP_FRAC = Double.parseDouble(System.getProperty("minicpbp.bp.topFrac", "0"));
     private long failLevelSum = 0, failCount = 0;
+    /* ldsRule (LDS cost model, RESEARCH_PLAN.md "Search-specific BP spending rules"): reuse stale marginals
+     * where a wrong value is cheap within the current pass. b0: no discrepancy left on the path; b1: at most
+     * one; cost: estimated cost D^(b+1) below ldsCostNodes, D = mean failure level - current level (>= 1).
+     * Only adds reuse; outside LDS (budget unknown) it does nothing. */
+    private static final String LDS_RULE = System.getProperty("minicpbp.bp.ldsRule", "");
+    private static final double LDS_COST_NODES = Double.parseDouble(System.getProperty("minicpbp.bp.ldsCostNodes", "25"));
     private static final double TIME_CAP = Double.parseDouble(System.getProperty("minicpbp.bp.timeCap", "0"));
     private long capT0 = -1;
     public static long stage3Skips, stage3Forced; // counters for the .stats output
@@ -632,6 +638,17 @@ public class MiniCP implements Solver {
         }
         if (TOP_FRAC > 0 && reuse && failCount > 0
                 && sm.getLevel() < TOP_FRAC * ((double) failLevelSum / failCount)) { reuse = false; stage3Forced++; }
+        if (!LDS_RULE.isEmpty() && !reuse && minicpbp.util.SearchContext.ldsBudgetLeft != Integer.MAX_VALUE) {
+            int b = minicpbp.util.SearchContext.ldsBudgetLeft;
+            boolean cheap;
+            if (LDS_RULE.equals("b0")) cheap = b <= 0;
+            else if (LDS_RULE.equals("b1")) cheap = b <= 1;
+            else {
+                double depthLeft = failCount > 0 ? Math.max(1, (double) failLevelSum / failCount - sm.getLevel()) : Double.MAX_VALUE;
+                cheap = Math.pow(depthLeft, b + 1) < LDS_COST_NODES;
+            }
+            if (cheap) { reuse = true; stage3Skips++; }
+        }
         if (TIME_CAP > 0 && !reuse) {
             long now = System.nanoTime();
             if (capT0 < 0) capT0 = now;

@@ -35,6 +35,8 @@ import org.antlr.v4.parse.ANTLRParser.throwsSpec_return;
  */
 public class LDSearch extends Search{
 
+    private static final int MAX_PASS_BUDGET = Integer.getInteger("minicpbp.lds.maxPassBudget", 0);
+
     private Supplier<Procedure[]> branching;
     private LimitedDiscrepancyBranching LDSbranching;
     private boolean geometric; // true if the sequence of max discrepancies follows a geometric progression (with ratio=2); false if it follows an arithmetic progression (with difference=1)
@@ -133,6 +135,7 @@ public class LDSearch extends Search{
 		if (singlePassCap >= 0) {
 		    int cap = Math.min(singlePassCap, discrepancyUB);
 		    LDSbranching = new LimitedDiscrepancyBranching(branching, cap);
+		    minicpbp.util.SearchContext.ldsBudgetLeft = cap; // root of the pass
 		    ldsPass(cap, statistics, limit);
 		    // the unconditional setCompleted() below is for the full
 		    // ladder; a single pass claims completion only untruncated
@@ -142,6 +145,7 @@ public class LDSearch extends Search{
 		}
 		if (discrepancyUB==0) { // special case of all vars already being fixed
 		    LDSbranching = new LimitedDiscrepancyBranching(branching, 0);
+		    minicpbp.util.SearchContext.ldsBudgetLeft = 0; // root of the pass
 		    ldsPass(0, statistics, limit);
 		}
                 else
@@ -156,11 +160,16 @@ public class LDSearch extends Search{
 		    while (true) { // nb discrepancies of rightmost branch <= nb vars * (domain size - 1)
 			int cap = Math.min(maxDiscrepancy, discrepancyUB);
 			LDSbranching = new LimitedDiscrepancyBranching(branching, cap);
+			minicpbp.util.SearchContext.ldsBudgetLeft = cap; // root of the pass
 			// System.out.println("LDS: on search tree with max discrepancy = "+cap);
 			ldsPass(cap, statistics, limit);
 			// System.out.println(statistics);
 			if (cap >= discrepancyUB)
 			    break;
+			// combined search (minicpbp.lds.maxPassBudget=K): stop, not completed, once a pass with
+			// budget >= K has found nothing; the caller then runs its exhaustive phase
+			if (MAX_PASS_BUDGET > 0 && cap >= MAX_PASS_BUDGET)
+			    throw new StopSearchException();
 			if (geometric)
 			    maxDiscrepancy *= 2;
 			else
@@ -173,6 +182,7 @@ public class LDSearch extends Search{
                 throw new NotImplementedException("c lds with explicit stack needed to pass this test");
             }
         });
+        minicpbp.util.SearchContext.ldsBudgetLeft = Integer.MAX_VALUE; // outside LDS from here on
         return statistics;
     }
 

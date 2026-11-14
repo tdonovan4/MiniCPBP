@@ -88,6 +88,7 @@ public class LimitedDiscrepancyBranching implements Supplier<Procedure[]> {
             int d = curD + bi; // branch index
             kFirstBranches[i] = () -> {
                 curD = d; // update discrepancy
+                minicpbp.util.SearchContext.ldsBudgetLeft = maxD - d; // read by the LDS BP rule (MiniCP.reuseNow)
                 branches[bi].call();
             };
         }
