@@ -55,6 +55,7 @@ public class SolveXCSPFZN {
 		WDEGRV, //dom-wdeg variable selection + uniform random value selection, no BP -- the unbiased value-rule control (N7, VALUE_ISOLATION_EXPERIMENT.md W4)
 		WDEGCNT, //dom-wdeg variable selection + value ordering by the incident counting constraints' solution densities, no BP (MDD_COUNTING_PLAN.md amendment A5)
 		IBS, //impact-based search
+		WDEGGATE, //dom-wdeg variable selection + max-marginal value where a producer reaches the variable (root ReachProbe), smallest value and no BP elsewhere
 	}
 
 	private static Map<String, BranchingHeuristic> branchingMap = new HashMap<String, BranchingHeuristic>() {
@@ -75,6 +76,7 @@ public class SolveXCSPFZN {
 			put("dom-wdeg-random-value", BranchingHeuristic.WDEGRV);
 			put("dom-wdeg-count-value", BranchingHeuristic.WDEGCNT);
 			put("impact-based-search", BranchingHeuristic.IBS);
+			put("dom-wdeg-gated-max-marginal", BranchingHeuristic.WDEGGATE);
 		}
 	};
 
@@ -266,8 +268,54 @@ public class SolveXCSPFZN {
 					// deliberately — BP's only job here is the branched variable's
 					// marginal (value selection); variable selection needs no BP.
 					// No nbFailCutof scaling: LDS/DFS only, no restart path uses it.
-					search = makeSearch(phased(decisionsVars, vs -> domWdegMaxMarginalValue(vs)));
+					// -Dminicpbp.bp.valueCache=true: reuse BP's value at nodes LDS
+					// revisits (BPValueCache), skipping BP there
+					// -Dminicpbp.bp.flatBackoff=eps: skip BP while it keeps returning
+					// flat marginals (FlatBackoff), smallest value meanwhile
+					if (Double.parseDouble(System.getProperty("minicpbp.bp.flatBackoff", "0")) > 0) {
+						minicpbp.search.FlatBackoff backoff = new minicpbp.search.FlatBackoff(
+								Double.parseDouble(System.getProperty("minicpbp.bp.flatBackoff")),
+								Integer.getInteger("minicpbp.bp.flatBackoffMax", 64));
+						minicp.setBPGate(backoff);
+						minicpbp.util.GateStats.reset();
+						minicpbp.util.GateStats.detail = backoff::summary;
+						search = makeSearch(phased(decisionsVars, vs -> domWdegFlatBackoffValue(backoff, vs)));
+					} else if (Boolean.getBoolean("minicpbp.bp.valueCache")) {
+						minicpbp.search.BPValueCache cache = new minicpbp.search.BPValueCache(minicp.getStateManager());
+						minicp.setBPGate(cache);
+						minicpbp.util.GateStats.reset();
+						minicpbp.util.GateStats.detail = cache::summary;
+						search = makeSearch(phased(decisionsVars, vs -> domWdegCachedMaxMarginalValue(cache, vs)));
+					} else
+						search = makeSearch(phased(decisionsVars, vs -> domWdegMaxMarginalValue(vs)));
 					break;
+				case WDEGGATE: {
+					// data_thomas/RESEARCH_PLAN.md WP3 item 2, static version: the
+					// probe runs once at the root, before any BP invocation, and its
+					// time counts in the run's
+					// -Dminicpbp.gate.mode: root (reach computed once by the root
+					// probe) or r1 | links | r2any (decision-time LocalGate, phase A)
+					minicpbp.util.GateStats.reset();
+					String gateMode = System.getProperty("minicpbp.gate.mode", "root");
+					if (gateMode.equals("root")) {
+						minicpbp.engine.core.ReachProbe.Result probe = minicpbp.engine.core.ReachProbe.run(minicp);
+						java.util.function.Predicate<IntVar> gate = probe::reached;
+						minicpbp.util.GateStats.probe = probe.summary();
+						minicpbp.util.GateStats.branchVars = (int) Arrays.stream(decisionsVars).filter(v -> !v.isBound()).count();
+						minicpbp.util.GateStats.reachedBranchVars = probe.reachedAmong(decisionsVars);
+						minicp.setBPGate(gate);
+						search = makeSearch(phased(decisionsVars, vs -> domWdegGatedMaxMarginalValue(gate, vs)));
+					} else {
+						minicpbp.engine.core.LocalGate gate = new minicpbp.engine.core.LocalGate(minicp,
+								minicpbp.engine.core.LocalGate.Mode.valueOf(gateMode.toUpperCase()),
+								minicpbp.engine.core.ReachProbe.LINK_MIN);
+						minicpbp.util.GateStats.probe = "local";
+						minicpbp.util.GateStats.detail = gate::summary;
+						minicp.setBPGate(gate);
+						search = makeSearch(phased(decisionsVars, vs -> domWdegGatedMaxMarginalValue(gate::verdictFor, vs)));
+					}
+					break;
+				}
 				default:
 					Log.info("unknown search strategy");
 					System.exit(1);

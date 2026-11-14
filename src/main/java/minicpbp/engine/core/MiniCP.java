@@ -166,6 +166,14 @@ public class MiniCP implements Solver {
         branchingOrder = x;
     }
 
+    /** producer/link gate (ReachProbe): BP runs only where it accepts the decision variable */
+    private java.util.function.Predicate<IntVar> bpGate;
+
+    @Override
+    public void setBPGate(java.util.function.Predicate<IntVar> gate) {
+        bpGate = gate;
+    }
+
     public long trigger() {return trigger;}
     public long potentialTrigger() {return potentialTrigger;}
 
@@ -472,6 +480,10 @@ public class MiniCP implements Solver {
      */
     @Override
     public void beliefPropa() {
+        if (minicpbp.util.BPConfig.SHADOW_SPECS.length > 0 && minicpbp.util.BPConfig.ROOT_AT_DECISION) {
+            shadowRegions();
+            return;
+        }
         long t0 = System.nanoTime();
         try {
             beliefPropaImpl();
@@ -480,10 +492,247 @@ public class MiniCP implements Solver {
         }
     }
 
+    private static final double CONF_TRIGGER = Double.parseDouble(System.getProperty("minicpbp.bp.confTrigger", "0"));
+    private static final boolean CONF_CALIB = Boolean.getBoolean("minicpbp.bp.confCalib");
+    /* depth calibration (-Dminicpbp.bp.sweepCalib, with calibLog): in a rooted
+     * K-sweep run the first sweep is inward from the cold state, i.e. exactly
+     * the 1-sweep run; x's marginal after sweep 1 is compared with the final one */
+    private static final boolean SWEEP_CALIB = Boolean.getBoolean("minicpbp.bp.sweepCalib");
+
+    /** x's marginal normalized over its current domain (vals), uniform if all zero */
+    private double[] domDist(IntVar x, int[] vals) {
+        double[] p = new double[vals.length];
+        double z = 0;
+        for (int j = 0; j < vals.length; j++) z += p[j] = Math.max(0, beliefRep.rep2std(x.marginal(vals[j])));
+        for (int j = 0; j < vals.length; j++) p[j] = z > 0 ? p[j] / z : 1.0 / vals.length;
+        return p;
+    }
+
+    private static double tv(double[] a, double[] b) {
+        double d = 0;
+        for (int j = 0; j < a.length; j++) d += Math.abs(a[j] - b[j]);
+        return d / 2;
+    }
+
+    /**
+     * Confidence of the stale marginal of x over its current domain:
+     * {c = 1 - H(p)/log|D|, argmax (ties to the smallest value)}; c = 0 when
+     * |D| = 1 or the marginal is all zero.
+     */
+    private double[] staleConfidence(IntVar x) {
+        int[] vals = new int[x.size()];
+        int n = x.fillArray(vals);
+        double z = 0;
+        double[] p = new double[n];
+        for (int j = 0; j < n; j++) z += p[j] = Math.max(0, beliefRep.rep2std(x.marginal(vals[j])));
+        int best = vals[0];
+        double bestP = -1, h = 0;
+        for (int j = 0; j < n; j++) {
+            double q = z > 0 ? p[j] / z : 1.0 / n;
+            if (q > 0) h -= q * Math.log(q);
+            if (q > bestP || (q == bestP && vals[j] < best)) { bestP = q; best = vals[j]; }
+        }
+        double c = (n < 2 || !(z > 0)) ? 0 : 1 - h / Math.log(n);
+        double second = 0;
+        for (int j = 0; j < n; j++) {
+            double q = z > 0 ? p[j] / z : 1.0 / n;
+            if (vals[j] != best && q > second) second = q;
+        }
+        double kl = n < 2 ? 0 : Math.log(n) - h;
+        return new double[]{c, best, kl, bestP - 1.0 / n, bestP - second, n};
+    }
+
+    /* per-decision calibration log (-Dminicpbp.bp.calibLog=file): one row per
+     * comparison of a stale marginal with a fresh BP run */
+    private static final String CALIB_LOG = System.getProperty("minicpbp.bp.calibLog", "");
+    private static java.io.PrintWriter calibOut;
+    /** nodes visited (beliefPropa calls outside shadows), and the trailed value at the last real BP run on the path */
+    private long nodeCalls = 0;
+    private minicpbp.state.StateInt lastBPNode;
+
+    /** relative shrinkage of the summed domain sizes since the last BP on the path (the reuse trigger's quantity) */
+    private double globalShrink() {
+        long sum = 0;
+        Iterator<IntVar> it = variables.iterator();
+        while (it.hasNext()) sum += it.next().size();
+        int ref = sumDomainSizes.value();
+        return ref == Integer.MAX_VALUE || ref == 0 ? -1 : 1.0 - (double) sum / ref;
+    }
+
+    private void calibRow(String setting, double[] f, long age, double shrink, boolean agree, double quality) {
+        if (CALIB_LOG.isEmpty()) return;
+        openCalib();
+        calibOut.printf(java.util.Locale.ROOT, "%s,%.5f,%.5f,%.5f,%.5f,%d,%d,%.5f,%d,%.4f%n",
+                setting, f[0], f[2], f[3], f[4], (int) f[5], age, shrink, agree ? 1 : 0, quality);
+    }
+
+    private static void openCalib() {
+        if (calibOut == null) {
+            try {
+                calibOut = new java.io.PrintWriter(new java.io.BufferedWriter(new java.io.FileWriter(CALIB_LOG, true)));
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> calibOut.flush()));
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    /** depth calibration row: setting "sweep",
+     * c1,kl1,strength1,margin1,domSize, staleMargin, agreeStale1 (argmax after sweep 1 == stale argmax),
+     * tvStale1 (stale vs sweep 1), age, globalShrink, sweepsRun, agree13, q13 = pK(v1)/pK(vK), tv13 */
+    private void sweepRow(IntVar x, int[] vals, double[] stale, double[] staleP, double[] f1, double[] p1,
+                          int sweeps, long age, double shrink) {
+        if (CALIB_LOG.isEmpty()) return;
+        openCalib();
+        double[] fK = staleConfidence(x);
+        double[] pK = domDist(x, vals);
+        int v1 = (int) f1[1], vK = (int) fK[1];
+        double pv1 = 0, pvK = 0;
+        for (int j = 0; j < vals.length; j++) { if (vals[j] == v1) pv1 = pK[j]; if (vals[j] == vK) pvK = pK[j]; }
+        calibOut.printf(java.util.Locale.ROOT, "sweep,%.5f,%.5f,%.5f,%.5f,%d,%.5f,%d,%.5f,%d,%.5f,%d,%d,%.4f,%.5f%n",
+                f1[0], f1[2], f1[3], f1[4], vals.length, stale[4], v1 == (int) stale[1] ? 1 : 0, tv(staleP, p1),
+                age, shrink, sweeps, v1 == vK ? 1 : 0, pvK > 0 ? pv1 / pvK : 1.0, tv(p1, pK));
+    }
+
+    /** reuse shadow: forces the next beliefPropaImpl call past the reuse test */
+    private boolean forceRun = false;
+    private static final boolean REUSE_SHADOW = Boolean.getBoolean("minicpbp.bp.reuseShadow");
+
+    /**
+     * Reuse shadow (-Dminicpbp.bp.reuseShadow): at a node where the 5 % gate
+     * reuses stale marginals, records the value they give the decision
+     * variable, then runs a fresh BP inside a saved state and compares. The
+     * state is restored afterwards (marginals, local beliefs and the trigger's
+     * reference are trailed; BP removes no value), so the search continues
+     * exactly as the reuse arm would.
+     */
+    private void reuseShadow() {
+        IntVar x = wdegDecisionVar();
+        if (x == null) return;
+        int reused = x.valueWithMaxMarginal();
+        final double[] feat = staleConfidence(x);
+        final long age = lastBPNode == null ? -1 : nodeCalls - lastBPNode.value();
+        final double shrink = CALIB_LOG.isEmpty() ? 0 : globalShrink();
+        sm.withNewState(() -> {
+            forceRun = true;
+            try {
+                beliefPropaImpl();
+            } finally {
+                forceRun = false;
+            }
+            int fresh = x.valueWithMaxMarginal();
+            double best = beliefRep.rep2std(x.marginal(fresh));
+            minicpbp.util.RegionShadow.reuseNodes++;
+            if (reused == fresh) minicpbp.util.RegionShadow.reuseAgree++;
+            minicpbp.util.RegionShadow.reuseQuality += best > 0 ? beliefRep.rep2std(x.marginal(reused)) / best : 1.0;
+            calibRow("reuse", feat, age, shrink, reused == fresh, best > 0 ? beliefRep.rep2std(x.marginal(reused)) / best : 1.0);
+            // the fallback a skipped BP would use: the smallest value
+            if (x.min() == fresh) minicpbp.util.RegionShadow.minAgree++;
+            minicpbp.util.RegionShadow.minQuality += best > 0 ? beliefRep.rep2std(x.marginal(x.min())) / best : 1.0;
+        });
+    }
+
+    /**
+     * Shadow measurement (BPConfig.SHADOW_SPECS): BP under each cheaper variant
+     * size, then the full run the search uses. Every run starts with a cold
+     * reset, so the runs do not see each other's messages. Requires
+     * alwaysRunBP, so that every run actually executes.
+     */
+    private void shadowRegions() {
+        String[] specs = minicpbp.util.BPConfig.SHADOW_SPECS;
+        if (minicpbp.util.RegionShadow.agree == null) minicpbp.util.RegionShadow.init(specs.length);
+        IntVar x = wdegDecisionVar();
+        int savedHops = minicpbp.util.BPConfig.REGION_HOPS;
+        double savedFrac = minicpbp.util.BPConfig.REGION_FRAC;
+        boolean savedWarm = minicpbp.util.BPConfig.WARM_START;
+        int savedSweeps = beliefPropaMaxIter;
+        int[] val = new int[specs.length];
+        try {
+            for (int i = 0; i < specs.length; i++) {
+                // spec letters: hK region of K hops, pF region of a fraction F of the factors (BFS
+                // from x), sK K sweeps, w warm entry (factors outside the region keep the messages
+                // of the last BP on the path: a frozen boundary instead of a uniform one)
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("([hpsw])([0-9.]*)").matcher(specs[i]);
+                minicpbp.util.BPConfig.REGION_HOPS = savedHops;
+                minicpbp.util.BPConfig.REGION_FRAC = savedFrac;
+                minicpbp.util.BPConfig.WARM_START = savedWarm;
+                beliefPropaMaxIter = savedSweeps;
+                while (m.find()) {
+                    if (m.group(1).equals("h")) minicpbp.util.BPConfig.REGION_HOPS = Integer.parseInt(m.group(2));
+                    else if (m.group(1).equals("p")) minicpbp.util.BPConfig.REGION_FRAC = Double.parseDouble(m.group(2));
+                    else if (m.group(1).equals("w")) minicpbp.util.BPConfig.WARM_START = true;
+                    else beliefPropaMaxIter = Integer.parseInt(m.group(2));
+                }
+                // each variant from the node's entry state (needed for warm variants, whose input
+                // is the stored messages); requires the newest-first Trailer restore
+                sm.saveState(); // withNewState does not restore when the body throws
+                try {
+                    long u0 = minicpbp.util.BPStats.factorUpdates, t0 = System.nanoTime();
+                    beliefPropaImpl();
+                    minicpbp.util.RegionShadow.nanos[i] += System.nanoTime() - t0;
+                    minicpbp.util.RegionShadow.updates[i] += minicpbp.util.BPStats.factorUpdates - u0;
+                    val[i] = x == null ? 0 : x.valueWithMaxMarginal();
+                } finally {
+                    sm.restoreState();
+                }
+            }
+        } finally {
+            minicpbp.util.BPConfig.REGION_HOPS = savedHops;
+            minicpbp.util.BPConfig.REGION_FRAC = savedFrac;
+            minicpbp.util.BPConfig.WARM_START = savedWarm;
+            beliefPropaMaxIter = savedSweeps;
+        }
+        long u0 = minicpbp.util.BPStats.factorUpdates, t0 = System.nanoTime();
+        try {
+            beliefPropaImpl();
+        } finally {
+            long dt = System.nanoTime() - t0;
+            minicpbp.util.BPStats.bpNanos += dt;
+            minicpbp.util.RegionShadow.fullNanos += dt;
+            minicpbp.util.RegionShadow.fullUpdates += minicpbp.util.BPStats.factorUpdates - u0;
+        }
+        if (x != null) {
+            minicpbp.util.RegionShadow.decisions++;
+            int full = x.valueWithMaxMarginal();
+            double best = beliefRep.rep2std(x.marginal(full));
+            for (int i = 0; i < specs.length; i++) {
+                if (val[i] == full) minicpbp.util.RegionShadow.agree[i]++;
+                minicpbp.util.RegionShadow.quality[i] += best > 0 ? beliefRep.rep2std(x.marginal(val[i])) / best : 1.0;
+            }
+        }
+    }
+
     private void beliefPropaImpl() {
  //       System.out.println(variables.size()+" variables");
  //       System.out.println(constraints.size()+" constraints");
         Constraint c;
+        // producer/link gate: the decision variable is out of every producer's
+        // reach, so the branching heuristic will not read its marginal
+        if (bpGate != null) {
+            IntVar x = wdegDecisionVar();
+            if (x == null || !bpGate.test(x))
+                return;
+        }
+        // confidence trigger (-Dminicpbp.bp.confTrigger=tau): reuse the stale
+        // marginals when the decision variable already has a strong preference
+        // in them, c = 1 - H(p)/log|D| >= tau over its current domain
+        IntVar confX = (CONF_TRIGGER > 0 || CONF_CALIB || SWEEP_CALIB) ? wdegDecisionVar() : null;
+        double confC = -1;
+        int staleVal = Integer.MIN_VALUE;
+        double[] st = null;
+        // nodes since the last real BP on the path, this node included (nodeCalls
+        // is incremented further down for the current node)
+        long ageBefore = lastBPNode == null ? -1 : nodeCalls + 1 - lastBPNode.value();
+        double shrinkBefore = CALIB_LOG.isEmpty() ? 0 : globalShrink();
+        if (confX != null) {
+            st = staleConfidence(confX);
+            confC = st[0];
+            staleVal = (int) st[1];
+            if (CONF_TRIGGER > 0 && !forceRun && confC >= CONF_TRIGGER) {
+                minicpbp.util.ConfStats.reused++;
+                return;
+            }
+        }
         // First decide whether we trigger BP or simply reuse current marginals
         int sum = 0;
         Iterator<IntVar> iterator = variables.iterator();
@@ -491,6 +740,8 @@ public class MiniCP implements Solver {
             sum += iterator.next().size();
         }
         potentialTrigger++;
+        if (!forceRun) nodeCalls++;
+        if (lastBPNode == null) lastBPNode = sm.makeStateInt(0);
         minicpbp.util.BPStats.calls++;
         // Probe K (BP_PROBE_PROTOCOL.md amendment 7): the decision-keyed
         // trigger replaces the 5 % gate below. Static final, folded when off.
@@ -502,7 +753,7 @@ public class MiniCP implements Solver {
             sumDomainSizes.setValue(sum);
             bpEpoch++;
         }
-        else if (!ALWAYS_RUN_BP && sum >= (1.0 - beliefUpdateThreshold) * sumDomainSizes.value()) { // trigger BP only if domains sufficiently changed
+        else if (!ALWAYS_RUN_BP && !forceRun && sum >= (1.0 - beliefUpdateThreshold) * sumDomainSizes.value()) { // trigger BP only if domains sufficiently changed
             // 2026-08-19 (TODO.md item 3 diagnosis): renormalizing on the
             // reuse path is not idempotent in floating point (v / sum(v)
             // drifts by ulps when sum is ~1 but not exactly 1). Repeated
@@ -517,6 +768,7 @@ public class MiniCP implements Solver {
                     iterator.next().normalizeMarginals();
                 }
             }
+            if (REUSE_SHADOW) reuseShadow();
             return; // reuse current marginals
         }
         else {
@@ -526,6 +778,7 @@ public class MiniCP implements Solver {
             bpEpoch++;
         }
         notifyBeliefPropa();
+        if (lastBPNode != null) lastBPNode.setValue((int) nodeCalls);
         try {
             if (tuneDamping) { // decide & tune message damping; default: once at the root node
                 BPtuneDamping();
@@ -566,7 +819,17 @@ public class MiniCP implements Solver {
             stableDecisionSweeps = 0;
             convergeSnapshotValid = false;
             final minicpbp.util.BPConfig.StopRule rule = minicpbp.util.BPConfig.STOP_RULE;
+            final boolean sweepCalib = SWEEP_CALIB && confX != null && !forceRun && confX.size() > 1;
+            final int[] scVals = sweepCalib ? new int[confX.size()] : null;
+            if (sweepCalib) confX.fillArray(scVals);
+            final double[] scStale = sweepCalib ? domDist(confX, scVals) : null;
+            final double[][] sc1 = new double[2][];
+            final int[] scSweeps = {0};
             sched.run(beliefPropaMaxIter, iter -> {
+                if (sweepCalib) {
+                    scSweeps[0] = iter;
+                    if (sc1[0] == null) { sc1[0] = staleConfidence(confX); sc1[1] = domDist(confX, scVals); }
+                }
                 long t0 = System.nanoTime();
                 try {
                     return sweepMonitor(iter, entropy, rule);
@@ -576,6 +839,15 @@ public class MiniCP implements Solver {
                 }
             });
             sched.endInvocation();
+            if (sweepCalib && sc1[0] != null) sweepRow(confX, scVals, st, scStale, sc1[0], sc1[1], scSweeps[0], ageBefore, shrinkBefore);
+            if (CONF_CALIB && confX != null && !forceRun) {
+                int fresh = confX.valueWithMaxMarginal();
+                double best = beliefRep.rep2std(confX.marginal(fresh));
+                double q = best > 0 ? beliefRep.rep2std(confX.marginal(staleVal)) / best : 1.0;
+                if (!confX.contains(staleVal)) q = 0;
+                minicpbp.util.ConfStats.record(confC, staleVal == fresh, q);
+                calibRow("every", st, ageBefore, shrinkBefore, staleVal == fresh, q);
+            }
         } catch (InconsistencyException e) {
             // empty the queue and unset the scheduled status
             while (!propagationQueue.isEmpty())
@@ -1140,7 +1412,7 @@ public class MiniCP implements Solver {
      * rootAtDecision schedule hint (probe Q, amendment 13); its inputs do not
      * move during BP sweeps, so within one invocation it is a constant.
      */
-    private IntVar wdegDecisionVar() {
+    public IntVar wdegDecisionVar() {
         IntVar best = null;
         double bestScore = Double.MAX_VALUE;
         if (branchingOrder != null) {

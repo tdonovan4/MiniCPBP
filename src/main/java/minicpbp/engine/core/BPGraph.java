@@ -169,6 +169,9 @@ final class BPGraph implements MarginalResync {
         computeCore();
         computeOrder();
         if (queryOnly) prune();
+        if ((minicpbp.util.BPConfig.REGION_HOPS > 0 || minicpbp.util.BPConfig.REGION_FRAC > 0) && preferredRoot != null)
+            pruneOutsideRegion(minicpbp.util.BPConfig.REGION_HOPS > 0 ? minicpbp.util.BPConfig.REGION_HOPS : Integer.MAX_VALUE,
+                    minicpbp.util.BPConfig.REGION_FRAC);
         BPStats.schedulesBuilt++;
         BPStats.lastFactors = nFactors;
         BPStats.lastVars = nVars;
@@ -403,6 +406,51 @@ final class BPGraph implements MarginalResync {
         for (int f = 0; f < nFactors; f++) {
             pruned[f] |= !facSeen[f];
         }
+    }
+
+    /**
+     * Prunes every factor more than {@code hops} factor-hops away from the
+     * preferred root (BPConfig.REGION_HOPS), and beyond the nearest
+     * ceil(frac * live factors) when frac > 0 (BPConfig.REGION_FRAC):
+     * breadth-first over the effective graph, hop 1 being the factors holding
+     * the root.
+     */
+    private void pruneOutsideRegion(int hops, double frac) {
+        int live = 0;
+        for (int f = 0; f < nFactors; f++) if (!pruned[f]) live++;
+        int budget = frac > 0 ? (int) Math.ceil(frac * live) : Integer.MAX_VALUE;
+        int taken = 0;
+        for (int f = 0; f < nFactors; f++) facSeen[f] = false;
+        for (int v = 0; v < nVars; v++) varSeen[v] = false;
+        IntVar base = preferredRoot.getBaseVar();
+        int root = -1;
+        for (int v = 0; v < nVars; v++)
+            if (varOf[v] == base) { root = v; break; }
+        if (root >= 0) {
+            int[] q = queue;
+            int head = 0, tail = 0;
+            varSeen[root] = true;
+            q[tail++] = root;
+            for (int h = 1; h <= hops && head < tail; h++) {
+                int end = tail;
+                while (head < end) {
+                    int v = q[head++];
+                    for (int j = incStart[v]; j < incStart[v + 1] && taken < budget; j++) {
+                        int f = incFactor[j];
+                        if (facSeen[f] || pruned[f]) continue;
+                        facSeen[f] = true;
+                        taken++;
+                        for (int k = scopeStart[f]; k < scopeStart[f + 1]; k++) {
+                            int w = scopeVar[k];
+                            if (varSeen[w]) continue;
+                            varSeen[w] = true;
+                            q[tail++] = w;
+                        }
+                    }
+                }
+            }
+        }
+        for (int f = 0; f < nFactors; f++) pruned[f] |= !facSeen[f];
     }
 
     /* ====================================================================== */

@@ -235,8 +235,39 @@ public final class BPConfig {
      */
     public static final boolean ROOT_SCOPE_COMPONENT;
 
+    /**
+     * {@code -Dminicpbp.bp.regionHops=K} (default 0 = off). Under
+     * rootAtDecision, BP runs only on the factors within K factor-hops of the
+     * decision variable: hop 1 = the factors holding it, hop k+1 = the factors
+     * sharing an unbound variable with a hop-k factor. The others keep their
+     * cold-reset uniform messages. Not final: the shadow measurement
+     * ({@code shadowHops}) switches it per run.
+     */
+    public static int REGION_HOPS;
+
+    /**
+     * {@code -Dminicpbp.bp.regionFrac=F} (default 0 = off). Under
+     * rootAtDecision, BP runs only on the nearest ceil(F * live factors)
+     * factors of the decision variable, in breadth-first order: a region size
+     * relative to the instance, unlike regionHops. Not final (shadow).
+     */
+    public static double REGION_FRAC;
+
+    /**
+     * {@code -Dminicpbp.bp.shadow=h1,p0.25,s1,p0.25s1} (default empty).
+     * Measurement: before every real BP invocation, BP is also run under each
+     * listed variant -- hK = regionHops K, pF = regionFrac F, sN = N sweeps,
+     * combinable -- and its argmax on the decision variable is compared with
+     * the full run's (RegionShadow). The search follows the full run.
+     */
+    public static final String[] SHADOW_SPECS;
+
     static {
         SCHEDULE = Schedule.valueOf(System.getProperty("minicpbp.bp.schedule", "flood").toUpperCase());
+        REGION_HOPS = Integer.parseInt(System.getProperty("minicpbp.bp.regionHops", "0"));
+        REGION_FRAC = Double.parseDouble(System.getProperty("minicpbp.bp.regionFrac", "0"));
+        String sh = System.getProperty("minicpbp.bp.shadow", "");
+        SHADOW_SPECS = sh.isEmpty() ? new String[0] : sh.split(",");
         WARM_START = Boolean.parseBoolean(System.getProperty("minicpbp.bp.warmStart", "false"));
         INCREMENTAL_DIRTY = Boolean.parseBoolean(System.getProperty("minicpbp.bp.incrementalDirty", "false"));
         NO_EARLY_STOP = Boolean.parseBoolean(System.getProperty("minicpbp.bp.noEarlyStop", "false"));

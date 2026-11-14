@@ -1039,6 +1039,37 @@ public final class BranchingScheme {
      * @return a dom/wdeg branching strategy
      * @see Factory#makeDfs(Solver, Supplier)
      */
+    /** ValueDiag: records how flat xs's marginal is; falls back to xs.min() below flatMin */
+    private static int diagnoseValue(IntVar xs, int v) {
+        Belief rep = xs.getSolver().getBeliefRep();
+        int[] vals = new int[xs.size()];
+        int n = xs.fillArray(vals);
+        double[] p = new double[n];
+        double z = 0, top1 = 0, top2 = 0;
+        for (int j = 0; j < n; j++) {
+            p[j] = Math.max(0, rep.rep2std(xs.marginal(vals[j])));
+            z += p[j];
+        }
+        double kl = 0;
+        for (int j = 0; j < n; j++) {
+            double q = z > 0 ? p[j] / z : 1.0 / n;
+            if (q > 0) kl += q * Math.log(q * n);
+            if (q > top1) { top2 = top1; top1 = q; } else if (q > top2) top2 = q;
+        }
+        minicpbp.util.ValueDiag.decisions++;
+        minicpbp.util.ValueDiag.klSum += kl;
+        if (v == xs.min()) minicpbp.util.ValueDiag.sameAsMin++;
+        if (kl < 0.01) minicpbp.util.ValueDiag.flat001++;
+        if (kl < 0.1) minicpbp.util.ValueDiag.flat01++;
+        if (kl < 0.5) minicpbp.util.ValueDiag.flat05++;
+        if (top1 - top2 < 0.01) minicpbp.util.ValueDiag.gap001++;
+        if (kl < minicpbp.util.ValueDiag.FLAT_MIN) {
+            minicpbp.util.ValueDiag.fallbacks++;
+            return minicpbp.util.ValueDiag.FALLBACK_RANDOM ? xs.randomValue() : xs.min();
+        }
+        return v;
+    }
+
     public static Supplier<Procedure[]> domWdegMaxMarginalValue(IntVar... x) {
         for (IntVar a : x)
             a.setForBranching(true);
@@ -1054,7 +1085,9 @@ public final class BranchingScheme {
             if (xs == null)
                 return EMPTY;
             else {
-                int v = xs.valueWithMaxMarginal();
+                int v0 = xs.valueWithMaxMarginal();
+                int v = (minicpbp.util.ValueDiag.ON || minicpbp.util.ValueDiag.FLAT_MIN > 0)
+                        ? diagnoseValue(xs, v0) : v0;
                 return branch(
                         () -> {
                             Log.branchEqual(xs.getName(), v);
@@ -1065,6 +1098,110 @@ public final class BranchingScheme {
                             branchNotEqual(xs, v);
                         });
             }
+        };
+    }
+
+    /**
+     * dom/wdeg variable selection with the value from {@link minicpbp.search.FlatBackoff}:
+     * BP's max marginal (ties to the smallest value) when BP ran and is not
+     * flat, the smallest value otherwise. Install the same object as the
+     * solver's BP gate.
+     *
+     * @param backoff the backoff state, also the solver's BP gate
+     * @param x       the variables on which the strategy is applied
+     * @return a dom/wdeg branching strategy with flat-backoff BP values
+     */
+    public static Supplier<Procedure[]> domWdegFlatBackoffValue(minicpbp.search.FlatBackoff backoff, IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+            if (xs == null)
+                return EMPTY;
+            int v = backoff.value(xs);
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), v);
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), v);
+                        branchNotEqual(xs, v);
+                    });
+        };
+    }
+
+    /**
+     * {@link #domWdegMaxMarginalValue} with BP's value reused across LDS passes
+     * ({@link minicpbp.search.BPValueCache}). Install the same cache as the
+     * solver's BP gate so that BP is skipped on a hit.
+     *
+     * @param cache the value cache, also the solver's BP gate
+     * @param x     the variables on which the strategy is applied
+     * @return a dom/wdeg branching strategy with cached max-marginal values
+     */
+    public static Supplier<Procedure[]> domWdegCachedMaxMarginalValue(minicpbp.search.BPValueCache cache, IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+            if (xs == null)
+                return EMPTY;
+            int v = cache.value(xs);
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), v);
+                        cache.descend(xs, v, true);
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), v);
+                        cache.descend(xs, v, false);
+                        branchNotEqual(xs, v);
+                    });
+        };
+    }
+
+    /**
+     * dom/wdeg variable selection; the value with maximum marginal if the gate
+     * accepts the variable, the smallest value otherwise. Install the same gate
+     * with {@link Solver#setBPGate} so that BP is not run at the nodes where its
+     * marginal would not be read. Counts decisions in {@link minicpbp.util.GateStats}.
+     *
+     * @param gate accepts the variables on which BP's value is used
+     * @param x    the variables on which the strategy is applied
+     * @return a dom/wdeg branching strategy with gated max-marginal values
+     */
+    public static Supplier<Procedure[]> domWdegGatedMaxMarginalValue(Predicate<IntVar> gate, IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+                    xi -> ((double) xi.size()) / ((double) xi.wDeg()));
+            if (xs == null)
+                return EMPTY;
+            boolean bp = gate.test(xs);
+            minicpbp.util.GateStats.decisions++;
+            if (bp)
+                minicpbp.util.GateStats.bpDecisions++;
+            int v = bp ? xs.valueWithMaxMarginal() : xs.min();
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), v);
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), v);
+                        branchNotEqual(xs, v);
+                    });
         };
     }
 

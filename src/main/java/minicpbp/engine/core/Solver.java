@@ -294,6 +294,16 @@ public interface Solver {
     void setBranchingOrder(IntVar[] x);
 
     /**
+     * Gates belief propagation on the variable dom/wdeg will branch on: at a
+     * node where the gate rejects that variable, BP is not run. Null removes
+     * the gate. Used with a branching heuristic that applies the same gate to
+     * its value choice (BranchingScheme.domWdegGatedMaxMarginalValue).
+     *
+     * @param gate accepts the variables on which BP is run
+     */
+    void setBPGate(java.util.function.Predicate<IntVar> gate);
+
+    /**
      * Registers the variable for belief propagation.
      *
      * @param x the variable
