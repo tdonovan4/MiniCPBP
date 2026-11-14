@@ -513,6 +513,86 @@ public class MiniCP implements Solver {
      * current domain is the mass left since the last BP): candidate predictors that the stale
      * value of x agrees with fresh BP, written as "feat" rows */
     private static final boolean FEAT_CALIB = Boolean.getBoolean("minicpbp.bp.featCalib");
+    /* decision shadow (-Dminicpbp.bp.decisionShadow=entropy|wdeg, with calibLog): at every node, the decision the
+     * configured (possibly optimized) BP gives -- variable by min entropy or dom/wdeg, value by max marginal --
+     * against the decision of a fresh, cold BP with minicpbp.bp.shadowRefSweeps sweeps (default 3) in a saved
+     * state; "dec" rows: setting(reuse|run),varAgree,valueAgreeOnVar,bothAgree,quality,domSize,entropyGap, where
+     * valueAgreeOnVar = the fresh argmax on the configured variable is the configured value, quality = fresh
+     * marginal of the configured value on the configured variable / fresh max marginal on that variable,
+     * entropyGap = fresh entropy of the configured variable - fresh minimum entropy (0 when the variable agrees
+     * or under dom/wdeg); the reference does not move BPStats, propagation or trigger counters */
+    private static final String DECISION_SHADOW = System.getProperty("minicpbp.bp.decisionShadow", "");
+    private static final int SHADOW_REF_SWEEPS = Integer.getInteger("minicpbp.bp.shadowRefSweeps", 3);
+
+    private IntVar shadowDecisionVar() {
+        return DECISION_SHADOW.equals("entropy") ? entropyDecisionVar() : wdegDecisionVar();
+    }
+
+    /* -Dminicpbp.bp.rootAt=entropy (with rootAtDecision): root the schedule at the variable min entropy picks
+     * from the marginals present before BP runs (the stale choice), the closest rooting min entropy allows,
+     * since its own decision is only known after BP */
+    private static final boolean ROOT_AT_ENTROPY = "entropy".equals(System.getProperty("minicpbp.bp.rootAt"));
+    private IntVar entropyRoot;
+
+    /** the unbound branching variable of smallest marginal entropy, ties to branching order (as minEntropy) */
+    public IntVar entropyDecisionVar() {
+        IntVar best = null;
+        double bestE = Double.MAX_VALUE;
+        if (branchingOrder != null) {
+            for (IntVar v : branchingOrder) {
+                if (v.size() <= 1) continue;
+                double e = v.entropy();
+                if (e < bestE) { bestE = e; best = v; }
+            }
+        }
+        return best;
+    }
+
+    private void decisionShadow(boolean reused) {
+        if (DECISION_SHADOW.isEmpty() || forceRun || CALIB_LOG.isEmpty()) return;
+        IntVar x = shadowDecisionVar();
+        if (x == null) return;
+        int v = x.valueWithMaxMarginal();
+        if (ROOT_AT_ENTROPY && reused) entropyRoot = x; // a run here would root at this stale choice
+        boolean savedWarm = minicpbp.util.BPConfig.WARM_START;
+        int savedIter = beliefPropaMaxIter;
+        // measurement only: the reference BP must not move counters, budgets or the work total
+        long c0 = minicpbp.util.BPStats.calls, i0 = minicpbp.util.BPStats.invocations, s0 = minicpbp.util.BPStats.sweeps,
+                f0 = minicpbp.util.BPStats.factorUpdates, n0 = minicpbp.util.BPStats.bpNanos, p0 = propagations;
+        long t0 = trigger;
+        int e0 = bpEpoch;
+        IntVar rx = null;
+        int rv = 0, rvx = 0;
+        double q = 1, eGap = 0;
+        sm.saveState();
+        try {
+            minicpbp.util.BPConfig.WARM_START = false;
+            beliefPropaMaxIter = SHADOW_REF_SWEEPS;
+            forceRun = true;
+            beliefPropaImpl();
+            rx = shadowDecisionVar();
+            rv = rx == null ? 0 : rx.valueWithMaxMarginal();
+            rvx = x.valueWithMaxMarginal();
+            double best = beliefRep.rep2std(x.marginal(rvx));
+            q = best > 0 ? beliefRep.rep2std(x.marginal(v)) / best : 1.0;
+            eGap = rx == null ? 0 : x.entropy() - rx.entropy();
+        } catch (InconsistencyException e) {
+            return;
+        } finally {
+            forceRun = false;
+            minicpbp.util.BPConfig.WARM_START = savedWarm;
+            beliefPropaMaxIter = savedIter;
+            sm.restoreState();
+            minicpbp.util.BPStats.calls = c0; minicpbp.util.BPStats.invocations = i0; minicpbp.util.BPStats.sweeps = s0;
+            minicpbp.util.BPStats.factorUpdates = f0; minicpbp.util.BPStats.bpNanos = n0; propagations = p0;
+            trigger = t0;
+            bpEpoch = e0; // not trailed: incremental seeding compares stamps with it
+        }
+        openCalib();
+        boolean varAgree = rx == x;
+        calibOut.printf(java.util.Locale.ROOT, "dec,%s,%d,%d,%d,%.4f,%d,%.5f%n", reused ? "reuse" : "run",
+                varAgree ? 1 : 0, rvx == v ? 1 : 0, varAgree && rv == v ? 1 : 0, q, x.size(), eGap);
+    }
     /* stage 3 reuse rules (RESEARCH_PLAN.md, "Candidate optimizations"; all off by default; they
      * refine the reuse trigger and are ignored under alwaysRunBP):
      *   refutationReuse: reuse when the last BP on the path was rooted at the current branching
@@ -963,6 +1043,7 @@ public class MiniCP implements Solver {
                 }
             }
             if (REUSE_SHADOW) reuseShadow();
+            decisionShadow(true);
             return; // reuse current marginals
         }
         else {
@@ -971,6 +1052,8 @@ public class MiniCP implements Solver {
             sumDomainSizes.setValue(sum);
             bpEpoch++;
         }
+        // stale min-entropy choice, read before cold reset; the shadow's forced reference keeps the node's root
+        if (ROOT_AT_ENTROPY && !forceRun) entropyRoot = entropyDecisionVar();
         notifyBeliefPropa();
         if (lastBPNode != null) lastBPNode.setValue((int) nodeCalls);
         if (FEAT_CALIB || REFUTATION_REUSE) {
@@ -999,7 +1082,7 @@ public class MiniCP implements Solver {
             // rebuild inside beginInvocation consumes it. wdeg's inputs do not
             // move during sweeps, so one computation per invocation is exact.
             if (minicpbp.util.BPConfig.ROOT_AT_DECISION)
-                bpGraph().setPreferredRoot(wdegDecisionVar());
+                bpGraph().setPreferredRoot(ROOT_AT_ENTROPY ? entropyRoot : wdegDecisionVar());
             // the seeding must read the watermark of the PREVIOUS invocation on
             // this path, so the update below happens after beginInvocation
             sched.beginInvocation(fullDirty);
@@ -1038,6 +1121,7 @@ public class MiniCP implements Solver {
             });
             sched.endInvocation();
             if (sweepCalib && sc1[0] != null) sweepRow(confX, scVals, st, scStale, sc1[0], sc1[1], scSweeps[0], ageBefore, shrinkBefore);
+            decisionShadow(false);
             if (CONF_CALIB && confX != null && !forceRun) {
                 int fresh = confX.valueWithMaxMarginal();
                 double best = beliefRep.rep2std(confX.marginal(fresh));
