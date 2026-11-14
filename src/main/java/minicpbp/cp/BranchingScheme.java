@@ -574,6 +574,36 @@ public final class BranchingScheme {
     }
 
     /**
+     * dom/wdeg with min-entropy tie-breaking (dom-wdeg-entropy-tie): the variable of best dom/wdeg score, ties (relative
+     * tolerance tol; exact for tol = 0) broken by min entropy over the marginals present before BP, recorded by the
+     * solver at each BP call; BP is rooted at it under rootAtDecision; the value is the max marginal after BP, as in
+     * domWdegMaxMarginalValue. Falls back to the solver's tie-break rule on the current marginals when no BP call
+     * recorded a variable at this node.
+     */
+    public static Supplier<Procedure[]> domWdegEntropyTieBreak(double tol, IntVar... x) {
+        for (IntVar a : x)
+            a.setForBranching(true);
+        x[0].getSolver().setBranchingOrder(x);
+        x[0].getSolver().enablePreBPVarTieBreak(tol);
+        return () -> {
+            IntVar pre = x[0].getSolver().preBPDecisionVar();
+            IntVar xs = pre != null ? pre : ((minicpbp.engine.core.MiniCP) x[0].getSolver()).tieBreakVar();
+            if (xs == null)
+                return EMPTY;
+            int v = minicpbp.util.Perturb.argmaxMarginal(xs);
+            return branch(
+                    () -> {
+                        Log.branchEqual(xs.getName(), v);
+                        branchEqual(xs, v);
+                    },
+                    () -> {
+                        Log.branchNotEqual(xs.getName(), v);
+                        branchNotEqual(xs, v);
+                    });
+        };
+    }
+
+    /**
      * Min entropy with the variable chosen before BP (min-entropy-pre): the solver records, at each BP call, the
      * unbound variable of smallest entropy over the marginals present before BP (normalized over the current domain);
      * BP is rooted at it under rootAtDecision; the value is the max marginal after BP. Falls back to min entropy over

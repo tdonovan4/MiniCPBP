@@ -46,6 +46,7 @@ public class SolveXCSPFZN {
 		MXM, // maximum marginal
 		MNM, // minimum marginal
 		MNE, //minimum entropy
+		WDEGTB, //dom-wdeg variable, ties broken by min entropy over the marginals before BP (minicpbp.tb.tol), max-marginal value
 		MNEPRE, //minimum entropy over the marginals before BP, BP rooted there, value by max marginal after BP
 		MNERTB, //minimum entropy, uniform random tie-break among equal-entropy variables (probe N, BP_PROBE_PROTOCOL amendments 10/10a)
 		IE, //impact entropy
@@ -70,6 +71,7 @@ public class SolveXCSPFZN {
 			put("min-entropy", BranchingHeuristic.MNE);
 			put("min-entropy-rtb", BranchingHeuristic.MNERTB);
 			put("min-entropy-pre", BranchingHeuristic.MNEPRE);
+			put("dom-wdeg-entropy-tie", BranchingHeuristic.WDEGTB);
 			put("impact-entropy", BranchingHeuristic.IE);
 			put("impact-min-entropy", BranchingHeuristic.MIE);
 			put("min-entropy-biased", BranchingHeuristic.MNEBW);
@@ -205,6 +207,11 @@ public class SolveXCSPFZN {
 					break;
 				case MNE:
 					search = makeSearch(phased(decisionsVars, vs -> minEntropy(vs)));
+					break;
+				case WDEGTB:
+					search = makeSearch(phased(decisionsVars, vs -> domWdegEntropyTieBreak(
+							Double.parseDouble(System.getProperty("minicpbp.tb.tol", "0")), vs)));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case MNEPRE:
 					search = makeSearch(phased(decisionsVars, vs -> minEntropyPre(vs)));

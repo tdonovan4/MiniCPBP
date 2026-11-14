@@ -296,6 +296,10 @@ public interface Solver {
     /** min-entropy-pre: record, at each BP call, the min-entropy variable over the marginals present before BP */
     default void enablePreBPVar() { }
 
+    /** dom-wdeg-entropy-tie: record instead the dom/wdeg variable, ties (relative tolerance tol) broken by min
+     *  entropy over the marginals present before BP */
+    default void enablePreBPVarTieBreak(double tol) { }
+
     /** the variable recorded by the last BP call at this node (unbound), or null */
     default IntVar preBPDecisionVar() { return null; }
 

@@ -545,6 +545,40 @@ public class MiniCP implements Solver {
     @Override
     public void enablePreBPVar() { preVarOn = true; }
 
+    /* dom-wdeg-entropy-tie (RESEARCH_PLAN.md, "Min-entropy comparison", tie-breaking variant): the dom/wdeg variable,
+     * ties broken by min entropy over the marginals before BP; among exact ties (tol 0, relative 1e-9) or near ties
+     * (score within a factor 1 + tol of the best). Same structure as dom/wdeg + BP value: the variable is known before
+     * BP, so BP is rooted at it, and only the value depends on the node's BP. */
+    private double preTieTol = -1;
+    public static long tieBreakDecisions, tieBreakChanged; // decisions with several candidates; where entropy changed dom/wdeg's pick
+
+    @Override
+    public void enablePreBPVarTieBreak(double tol) { preVarOn = true; preTieTol = tol; }
+
+    public IntVar tieBreakVar() {
+        if (branchingOrder == null) return null;
+        double best = Double.MAX_VALUE;
+        IntVar first = null;
+        for (IntVar v : branchingOrder) {
+            if (v.size() <= 1) continue;
+            double s = minicpbp.util.Perturb.domWdeg(v);
+            if (s < best) { best = s; first = v; }
+        }
+        if (first == null) return null;
+        double lim = best * (1 + Math.max(preTieTol, 1e-9));
+        IntVar pick = null;
+        double bestE = Double.MAX_VALUE;
+        int cand = 0;
+        for (IntVar v : branchingOrder) {
+            if (v.size() <= 1 || minicpbp.util.Perturb.domWdeg(v) > lim) continue;
+            cand++;
+            double e = normalizedEntropy(v);
+            if (e < bestE) { bestE = e; pick = v; }
+        }
+        if (cand > 1) { tieBreakDecisions++; if (pick != first) tieBreakChanged++; }
+        return pick;
+    }
+
     @Override
     public IntVar preBPDecisionVar() {
         return preBPCall == minicpbp.util.BPStats.calls && preBPVar != null && preBPVar.size() > 1 ? preBPVar : null;
@@ -1060,7 +1094,10 @@ public class MiniCP implements Solver {
         }
         potentialTrigger++;
         if (!forceRun) nodeCalls++;
-        if (preVarOn && !forceRun) { preBPVar = normalizedEntropyVar(); preBPCall = minicpbp.util.BPStats.calls + 1; }
+        if (preVarOn && !forceRun) {
+            preBPVar = preTieTol >= 0 ? tieBreakVar() : normalizedEntropyVar();
+            preBPCall = minicpbp.util.BPStats.calls + 1;
+        }
         if (lastBPNode == null) lastBPNode = sm.makeStateInt(0);
         minicpbp.util.BPStats.calls++;
         // Probe K (BP_PROBE_PROTOCOL.md amendment 7): the decision-keyed
