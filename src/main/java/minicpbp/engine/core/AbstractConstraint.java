@@ -259,6 +259,12 @@ public abstract class AbstractConstraint implements Constraint {
         return localBelief[i].read()[val - ofs[i]];
     }
 
+    /** the stored message from this factor to its i-th scope variable for val (standard
+     *  representation, weight applied); read-only, for diagnostics */
+    public double messageToVar(int i, int val) {
+        return beliefRep.rep2std(beliefRep.pow(localBelief(i, val), weight));
+    }
+
     protected double setLocalBelief(int i, int val, double b) {
         // 2026-08-19 (TODO.md item 1): constraints with signed belief circuits
         // (complement/subtract: NegTableCT, Maximum, ...) can emit -epsilon

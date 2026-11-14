@@ -443,6 +443,7 @@ public class MiniCP implements Solver {
                 catch(InconsistencyException e) {
                     // empty the queue and unset the scheduled status
                     c.incrementFailureCount();
+                    if (TOP_FRAC > 0) { failLevelSum += sm.getLevel(); failCount++; }
                     while (!propagationQueue.isEmpty())
                         propagationQueue.remove().setScheduled(false);
                     throw e;
@@ -498,6 +499,155 @@ public class MiniCP implements Solver {
      * K-sweep run the first sweep is inward from the cold state, i.e. exactly
      * the 1-sweep run; x's marginal after sweep 1 is compared with the final one */
     private static final boolean SWEEP_CALIB = Boolean.getBoolean("minicpbp.bp.sweepCalib");
+    /* skip-predictor calibration (-Dminicpbp.bp.featCalib, with calibLog; run with
+     * -Dminicpbp.debug.skipReuseNormalize=true so that a variable's stale marginal mass on its
+     * current domain is the mass left since the last BP): candidate predictors that the stale
+     * value of x agrees with fresh BP, written as "feat" rows */
+    private static final boolean FEAT_CALIB = Boolean.getBoolean("minicpbp.bp.featCalib");
+    /* stage 3 reuse rules (RESEARCH_PLAN.md, "Candidate optimizations"; all off by default; they
+     * refine the reuse trigger and are ignored under alwaysRunBP):
+     *   refutationReuse: reuse when the last BP on the path was rooted at the current branching
+     *     variable (it was re-picked after x != v);
+     *   topDepth=f: BP at every node whose state level is below f x (number of branching variables);
+     *   timeCap=c: skip BP whenever the BP time so far exceeds c x the elapsed time since the first
+     *     BP call (overrides everything else). */
+    private static final boolean REFUTATION_REUSE = Boolean.getBoolean("minicpbp.bp.refutationReuse");
+    private static final double TOP_DEPTH = Double.parseDouble(System.getProperty("minicpbp.bp.topDepth", "0"));
+    /* topFrac=f: BP at every node whose state level is below f x the mean level of the failures so far
+     * (self-calibrating depth scale; topDepth uses the number of branching variables instead) */
+    private static final double TOP_FRAC = Double.parseDouble(System.getProperty("minicpbp.bp.topFrac", "0"));
+    private long failLevelSum = 0, failCount = 0;
+    private static final double TIME_CAP = Double.parseDouble(System.getProperty("minicpbp.bp.timeCap", "0"));
+    private long capT0 = -1;
+    public static long stage3Skips, stage3Forced; // counters for the .stats output
+    /** the branching variable the last BP on the path was rooted at (trailed) */
+    private minicpbp.state.State<IntVar> lastBPRoot;
+
+    /** remaining stale marginal mass of v on its current domain (1 = nothing removed since the last BP) */
+    private double staleMass(IntVar v) {
+        int[] vals = new int[v.size()];
+        int n = v.fillArray(vals);
+        double z = 0;
+        for (int j = 0; j < n; j++) z += Math.max(0, beliefRep.rep2std(v.marginal(vals[j])));
+        return Math.min(1.0, z);
+    }
+
+    /**
+     * Candidate skip predictors for x, read before BP:
+     * {surpG: mean -log(stale mass) over variables, massG: mean removed mass, surpX: -log(stale mass of x),
+     *  massN: mean removed mass over x's factor neighbours, strongChg: sum over x's factors of
+     *  KL(message to x) * removed mass in the factor's other variables, strongChgNorm: the same divided by
+     *  the sum of KL, disagree: KL-weighted share of x's factors whose message argmax differs from the
+     *  product's argmax, flip: 1 if removing one factor's message changes the argmax, nFactors,
+     *  sameRoot: the last BP was rooted at x}
+     */
+    private double[] staleFeatures(IntVar x) {
+        double surp = 0, mass = 0;
+        int nv = 0;
+        java.util.IdentityHashMap<IntVar, Double> massOf = new java.util.IdentityHashMap<>();
+        Iterator<IntVar> it = variables.iterator();
+        while (it.hasNext()) {
+            IntVar v = it.next();
+            double m = staleMass(v);
+            massOf.put(v, m);
+            surp += -Math.log(Math.max(m, 1e-300));
+            mass += 1 - m;
+            nv++;
+        }
+        int[] vals = new int[x.size()];
+        int n = x.fillArray(vals);
+        java.util.Arrays.sort(vals, 0, n);
+        java.util.List<double[]> msgs = new java.util.ArrayList<>();
+        java.util.List<Double> chg = new java.util.ArrayList<>();
+        java.util.Set<IntVar> nbrs = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Iterator<Constraint> ic = constraints.iterator();
+        while (ic.hasNext()) {
+            Constraint c = ic.next();
+            if (!c.isActive() || !c.bpParticipant() || !(c instanceof AbstractConstraint)) continue;
+            IntVar[] sc = c.getScope();
+            if (sc == null) continue;
+            int pos = -1;
+            for (int i = 0; i < sc.length; i++) if (sc[i] == x) { pos = i; break; }
+            if (pos < 0) continue;
+            double[] m = new double[n];
+            double z = 0;
+            for (int j = 0; j < n; j++) z += m[j] = Math.max(0, ((AbstractConstraint) c).messageToVar(pos, vals[j]));
+            for (int j = 0; j < n; j++) m[j] = z > 0 ? m[j] / z : 1.0 / n;
+            msgs.add(m);
+            double keep = 1;
+            for (int i = 0; i < sc.length; i++) {
+                if (i == pos) continue;
+                Double mu = massOf.get(sc[i]);
+                if (mu == null) mu = staleMass(sc[i]);
+                keep *= mu;
+                nbrs.add(sc[i]);
+            }
+            chg.add(1 - keep);
+        }
+        double massN = 0;
+        for (IntVar u : nbrs) { Double mu = massOf.get(u); massN += 1 - (mu == null ? staleMass(u) : mu); }
+        massN = nbrs.isEmpty() ? 0 : massN / nbrs.size();
+        // product of messages in log space, its argmax, KL of each message, disagreement and single-removal flips
+        double[] logp = new double[n];
+        double[] kl = new double[msgs.size()];
+        int[] am = new int[msgs.size()];
+        for (int f = 0; f < msgs.size(); f++) {
+            double[] m = msgs.get(f);
+            double k = Math.log(n);
+            int a = 0;
+            for (int j = 0; j < n; j++) {
+                logp[j] += Math.log(Math.max(m[j], 1e-300));
+                if (m[j] > 0) k += m[j] * Math.log(m[j]);
+                if (m[j] > m[a]) a = j;
+            }
+            kl[f] = n < 2 ? 0 : k; am[f] = a;
+        }
+        int best = 0;
+        for (int j = 1; j < n; j++) if (logp[j] > logp[best]) best = j;
+        double klSum = 0, dis = 0, strong = 0;
+        boolean flip = false;
+        for (int f = 0; f < msgs.size(); f++) {
+            klSum += kl[f];
+            if (am[f] != best) dis += kl[f];
+            strong += kl[f] * chg.get(f);
+            double[] m = msgs.get(f);
+            int b2 = 0;
+            for (int j = 1; j < n; j++)
+                if (logp[j] - Math.log(Math.max(m[j], 1e-300)) > logp[b2] - Math.log(Math.max(m[b2], 1e-300))) b2 = j;
+            if (b2 != best) flip = true;
+        }
+        boolean same = lastBPRoot != null && lastBPRoot.value() == x;
+        return new double[]{nv == 0 ? 0 : surp / nv, nv == 0 ? 0 : mass / nv, -Math.log(Math.max(massOf.getOrDefault(x, 1.0), 1e-300)),
+                massN, strong, klSum > 0 ? strong / klSum : 0, klSum > 0 ? dis / klSum : 0, flip ? 1 : 0, msgs.size(), same ? 1 : 0};
+    }
+
+    /** the reuse decision: the global shrink trigger, refined by the stage 3 rules (true = reuse stale marginals) */
+    private boolean reuseNow(int sum) {
+        boolean reuse = sum >= (1.0 - beliefUpdateThreshold) * sumDomainSizes.value();
+        if (REFUTATION_REUSE && !reuse && lastBPRoot != null && lastBPRoot.value() != null
+                && lastBPRoot.value() == wdegDecisionVar()) { reuse = true; stage3Skips++; }
+        if (TOP_DEPTH > 0 && reuse) {
+            int n = branchingOrder != null ? branchingOrder.length : variables.size();
+            if (sm.getLevel() < TOP_DEPTH * n) { reuse = false; stage3Forced++; }
+        }
+        if (TOP_FRAC > 0 && reuse && failCount > 0
+                && sm.getLevel() < TOP_FRAC * ((double) failLevelSum / failCount)) { reuse = false; stage3Forced++; }
+        if (TIME_CAP > 0 && !reuse) {
+            long now = System.nanoTime();
+            if (capT0 < 0) capT0 = now;
+            if (now > capT0 && minicpbp.util.BPStats.bpNanos > TIME_CAP * (now - capT0)) { reuse = true; stage3Skips++; }
+        }
+        return reuse;
+    }
+
+    private void featRow(String setting, double[] st, double[] ft, long age, double shrink, boolean agree, double quality) {
+        if (CALIB_LOG.isEmpty()) return;
+        openCalib();
+        StringBuilder b = new StringBuilder();
+        for (double v : ft) b.append(String.format(java.util.Locale.ROOT, ",%.6g", v));
+        calibOut.printf(java.util.Locale.ROOT, "feat,%s,%.5f,%.5f,%.5f,%.5f,%d,%d,%.5f%s,%d,%.4f%n",
+                setting, st[0], st[2], st[3], st[4], (int) st[5], age, shrink, b, agree ? 1 : 0, quality);
+    }
 
     /** x's marginal normalized over its current domain (vals), uniform if all zero */
     private double[] domDist(IntVar x, int[] vals) {
@@ -613,6 +763,7 @@ public class MiniCP implements Solver {
         final double[] feat = staleConfidence(x);
         final long age = lastBPNode == null ? -1 : nodeCalls - lastBPNode.value();
         final double shrink = CALIB_LOG.isEmpty() ? 0 : globalShrink();
+        final double[] ft = FEAT_CALIB && x.size() > 1 ? staleFeatures(x) : null;
         sm.withNewState(() -> {
             forceRun = true;
             try {
@@ -626,6 +777,7 @@ public class MiniCP implements Solver {
             if (reused == fresh) minicpbp.util.RegionShadow.reuseAgree++;
             minicpbp.util.RegionShadow.reuseQuality += best > 0 ? beliefRep.rep2std(x.marginal(reused)) / best : 1.0;
             calibRow("reuse", feat, age, shrink, reused == fresh, best > 0 ? beliefRep.rep2std(x.marginal(reused)) / best : 1.0);
+            if (ft != null) featRow("reuse", feat, ft, age, shrink, reused == fresh, best > 0 ? beliefRep.rep2std(x.marginal(reused)) / best : 1.0);
             // the fallback a skipped BP would use: the smallest value
             if (x.min() == fresh) minicpbp.util.RegionShadow.minAgree++;
             minicpbp.util.RegionShadow.minQuality += best > 0 ? beliefRep.rep2std(x.marginal(x.min())) / best : 1.0;
@@ -716,7 +868,8 @@ public class MiniCP implements Solver {
         // confidence trigger (-Dminicpbp.bp.confTrigger=tau): reuse the stale
         // marginals when the decision variable already has a strong preference
         // in them, c = 1 - H(p)/log|D| >= tau over its current domain
-        IntVar confX = (CONF_TRIGGER > 0 || CONF_CALIB || SWEEP_CALIB) ? wdegDecisionVar() : null;
+        IntVar confX = (CONF_TRIGGER > 0 || CONF_CALIB || SWEEP_CALIB || FEAT_CALIB) ? wdegDecisionVar() : null;
+        double[] feat = null;
         double confC = -1;
         int staleVal = Integer.MIN_VALUE;
         double[] st = null;
@@ -726,6 +879,7 @@ public class MiniCP implements Solver {
         double shrinkBefore = CALIB_LOG.isEmpty() ? 0 : globalShrink();
         if (confX != null) {
             st = staleConfidence(confX);
+            if (FEAT_CALIB && CONF_CALIB && !forceRun && confX.size() > 1) feat = staleFeatures(confX);
             confC = st[0];
             staleVal = (int) st[1];
             if (CONF_TRIGGER > 0 && !forceRun && confC >= CONF_TRIGGER) {
@@ -753,7 +907,7 @@ public class MiniCP implements Solver {
             sumDomainSizes.setValue(sum);
             bpEpoch++;
         }
-        else if (!ALWAYS_RUN_BP && !forceRun && sum >= (1.0 - beliefUpdateThreshold) * sumDomainSizes.value()) { // trigger BP only if domains sufficiently changed
+        else if (!ALWAYS_RUN_BP && !forceRun && reuseNow(sum)) { // trigger BP only if domains sufficiently changed (plus stage 3 rules)
             // 2026-08-19 (TODO.md item 3 diagnosis): renormalizing on the
             // reuse path is not idempotent in floating point (v / sum(v)
             // drifts by ulps when sum is ~1 but not exactly 1). Repeated
@@ -779,6 +933,10 @@ public class MiniCP implements Solver {
         }
         notifyBeliefPropa();
         if (lastBPNode != null) lastBPNode.setValue((int) nodeCalls);
+        if (FEAT_CALIB || REFUTATION_REUSE) {
+            if (lastBPRoot == null) lastBPRoot = sm.makeStateRef(null);
+            lastBPRoot.setValue(wdegDecisionVar());
+        }
         try {
             if (tuneDamping) { // decide & tune message damping; default: once at the root node
                 BPtuneDamping();
@@ -847,6 +1005,7 @@ public class MiniCP implements Solver {
                 if (!confX.contains(staleVal)) q = 0;
                 minicpbp.util.ConfStats.record(confC, staleVal == fresh, q);
                 calibRow("every", st, ageBefore, shrinkBefore, staleVal == fresh, q);
+                if (feat != null) featRow("every", st, feat, ageBefore, shrinkBefore, staleVal == fresh, q);
             }
         } catch (InconsistencyException e) {
             // empty the queue and unset the scheduled status

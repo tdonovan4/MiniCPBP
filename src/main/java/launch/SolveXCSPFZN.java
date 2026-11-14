@@ -267,7 +267,8 @@ public class SolveXCSPFZN {
 					// selection with max-marginal value selection. BP mode is left ON
 					// deliberately — BP's only job here is the branched variable's
 					// marginal (value selection); variable selection needs no BP.
-					// No nbFailCutof scaling: LDS/DFS only, no restart path uses it.
+					// Same nbFailCutof scaling as WDEG (unused under LDS and plain DFS),
+					// so that a restart comparison gives both value rules the same schedule.
 					// -Dminicpbp.bp.valueCache=true: reuse BP's value at nodes LDS
 					// revisits (BPValueCache), skipping BP there
 					// -Dminicpbp.bp.flatBackoff=eps: skip BP while it keeps returning
@@ -288,6 +289,7 @@ public class SolveXCSPFZN {
 						search = makeSearch(phased(decisionsVars, vs -> domWdegCachedMaxMarginalValue(cache, vs)));
 					} else
 						search = makeSearch(phased(decisionsVars, vs -> domWdegMaxMarginalValue(vs)));
+					nbFailCutof = nbFailCutof * decisionsVars.length;
 					break;
 				case WDEGGATE: {
 					// data_thomas/RESEARCH_PLAN.md WP3 item 2, static version: the
