@@ -58,6 +58,12 @@ public class SparseSetDomain implements IntDomain {
      * expressed against, cached because one factor reads a whole domain in a row */
     private int nzRef;
     private boolean nzRefValid;
+    /* how many entries of nzExp are non-zero. Exponents leave zero only on the
+     * rare out-of-band path, so this is almost always 0, and then the reference
+     * exponent is 0 without a domain scan: every value a cavity can be asked
+     * for is itself a candidate of the scan, so the scan's maximum is exactly 0
+     * whenever its result is read */
+    private int nzExpNonZero;
 
     public SparseSetDomain(Solver cp, int min, int max) {
         domain = new StateSparseWeightedSet(cp, max - min + 1, min);
@@ -248,6 +254,7 @@ public class SparseSetDomain implements IntDomain {
         // node is back in the domain at the next one, and these are not trailed
         java.util.Arrays.fill(nzMant, 1.0);
         java.util.Arrays.fill(nzExp, 0);
+        nzExpNonZero = 0;
         java.util.Arrays.fill(zeroCnt, 0);
         nzRefValid = false;
     }
@@ -275,12 +282,14 @@ public class SparseSetDomain implements IntDomain {
         int e = Math.getExponent(operand);
         double aligned = Math.scalb(operand, -e); // exact: a power of two
         nzMant[i] = divide ? nzMant[i] / aligned : nzMant[i] * aligned;
+        boolean wasZero = nzExp[i] == 0;
         nzExp[i] += divide ? -e : e;
         int em = Math.getExponent(nzMant[i]);
         if (nzMant[i] != 0.0 && (em > 512 || em < -512)) {
             nzMant[i] = Math.scalb(nzMant[i], -em);
             nzExp[i] += em;
         }
+        if (wasZero != (nzExp[i] == 0)) nzExpNonZero += wasZero ? 1 : -1;
         minicpbp.util.BPStats.nzRescales++;
     }
 
@@ -304,6 +313,7 @@ public class SparseSetDomain implements IntDomain {
      * so it costs the order of the read, never of a belief cell.
      */
     private int nzRefExp() {
+        if (nzExpNonZero == 0) return 0;
         if (nzRefValid) return nzRef;
         int s = domain.fillArray(domainValues);
         int mx = Integer.MIN_VALUE;
