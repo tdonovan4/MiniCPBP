@@ -400,8 +400,12 @@ public abstract class AbstractConstraint implements Constraint {
         for (int i = 0; i < vars.length; i++) {
             int s = vars[i].fillArray(domainValues);
             double uniform = beliefRep.divide(beliefRep.one(),(double) s);
+            // one row access instead of setLocalBelief per cell: the uniform
+            // value is positive, so setLocalBelief's negative clamp never fires
+            double[] row = localBelief[i].update();
+            int o = ofs[i];
             for (int j = 0; j < s; j++) {
-                setLocalBelief(i, domainValues[j], uniform);
+                row[domainValues[j] - o] = uniform;
             }
         }
     }
