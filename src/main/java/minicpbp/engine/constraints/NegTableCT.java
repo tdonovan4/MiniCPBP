@@ -160,12 +160,27 @@ public class NegTableCT extends AbstractConstraint {
 	    }
     }
 
+    /** menacing from scratch, for the assertion guarding its reuse */
+    private BitSet recomputedMenacing() {
+        BitSet t = new BitSet(tableLength);
+        t.set(0, tableLength);
+        int[] vals = new int[domainValues.length];
+        for (int i = 0; i < xLength; i++) {
+            BitSet ci = new BitSet(tableLength);
+            int s = x[i].fillArray(vals);
+            for (int j = 0; j < s; j++) ci.or(conflicts[i][vals[j] - ofs[i]]);
+            t.and(ci);
+        }
+        return t;
+    }
+
     @Override
     public void updateBelief() {
         // menacing is a function of the domains only, so it is reused while they
         // are provably unchanged (the propagate() of this node, earlier sweeps of
         // this BP invocation)
         if (domainsUnchangedSinceMark()) {
+            assert menacing.equals(recomputedMenacing()) : "stale menacing reused";
             for (int i = 0; i < xLength; i++) {
                 int s = x[i].fillArray(domainValues);
                 for (int j = 0; j < s; j++)

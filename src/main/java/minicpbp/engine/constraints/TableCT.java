@@ -183,6 +183,7 @@ public class TableCT extends AbstractConstraint {
         // domains only, so it is reused while they are provably unchanged (the
         // propagate() of this node, earlier sweeps of this BP invocation).
         if (domainsUnchangedSinceMark()) {
+            assert supportedTuples.equals(recomputedSupportedTuples()) : "stale supportedTuples reused";
             for (int i = 0; i < xLength; i++) {
                 int s = x[i].fillArray(domainValues);
                 for (int j = 0; j < s; j++)
@@ -257,6 +258,20 @@ public class TableCT extends AbstractConstraint {
                 setLocalBelief(i, v, beliefs[i][v - ofs[i]]);
             }
         }
+    }
+
+    /** supportedTuples from scratch, for the assertion guarding its reuse */
+    private BitSet recomputedSupportedTuples() {
+        BitSet t = new BitSet(tableLength);
+        t.set(0, tableLength);
+        int[] vals = new int[domainValues.length];
+        for (int i = 0; i < xLength; i++) {
+            BitSet si = new BitSet(tableLength);
+            int s = x[i].fillArray(vals);
+            for (int j = 0; j < s; j++) si.or(supports[i][vals[j] - ofs[i]]);
+            t.and(si);
+        }
+        return t;
     }
 
     // FOR SIMPLE COUNTING:
