@@ -157,8 +157,9 @@ public class AllDifferentDC extends AbstractConstraint {
 
     /**
      * Allocates the scratch space needed by the experimental counting routines
-     * (see IMPLEMENTATION_LOG.md, 2026-08-16). Nothing is allocated for the
-     * default configuration (Heap + Soules).
+     * (see IMPLEMENTATION_LOG.md, 2026-08-16). Under the default
+     * configuration (DP + Soules) that is the DP workspace and a minors buffer
+     * of exactMaxDim x exactMaxDim; nothing is allocated for Heap + Soules.
      */
     private void setupExperimentRoutines() {
         AllDiffStats.install();
