@@ -182,6 +182,36 @@ public abstract class AbstractConstraint implements Constraint {
 
     public void post() {}
 
+    /* Domain stamp for caches that are pure functions of the scope's domains
+     * (TableCT's supported tuples, NegTableCT's menacing tuples). Between two
+     * changes of the trail's magic number (every saveState and restoreState)
+     * domains only shrink, so an equal summed size means equal domains. */
+    private long domStampMagic = -1;
+    private int domStampSize = -1;
+
+    private int scopeSizeSum() {
+        int sum = 0;
+        for (int i = 0; i < vars.length; i++) sum += vars[i].size();
+        return sum;
+    }
+
+    private long trailMagic() {
+        minicpbp.state.StateManager sm = cp.getStateManager();
+        return sm instanceof minicpbp.state.Trailer ? ((minicpbp.state.Trailer) sm).getMagic() : -1;
+    }
+
+    /** records the scope's current domains as those a domain-derived cache was computed from */
+    protected void markDomains() {
+        domStampMagic = trailMagic();
+        domStampSize = scopeSizeSum();
+    }
+
+    /** true only when the scope's domains are provably those recorded by {@link #markDomains()} */
+    protected boolean domainsUnchangedSinceMark() {
+        long m = trailMagic();
+        return m >= 0 && m == domStampMagic && scopeSizeSum() == domStampSize;
+    }
+
     public Solver getSolver() {
         return cp;
     }
