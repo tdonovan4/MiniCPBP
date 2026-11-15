@@ -387,11 +387,12 @@ public class SumDC extends AbstractConstraint {
                     v = domainValues[j];
                     final double ob = outsideBelief(idx, v);
                     final int kHi = Math.min(maxState[i], maxState[i + 1] - v);
+                    // no zero test: a zero state adds 0*ob = +0.0 to a
+                    // nonnegative cell, which leaves it bit-identical, and the
+                    // branch-free loop is cheaper than the test
                     for (int k = Math.max(minState[i], minState[i + 1] - v); k <= kHi; k++) {
-                        if (!beliefRep.isZero(ipCur[k])) {
-                            // add the combination of ip[i][k] and outsideBelief(idx,v) to ip[i+1][k+v]
-                            ipNext[k + v] = beliefRep.add(ipNext[k + v], beliefRep.multiply(ipCur[k], ob));
-                        }
+                        // add the combination of ip[i][k] and outsideBelief(idx,v) to ip[i+1][k+v]
+                        ipNext[k + v] = beliefRep.add(ipNext[k + v], beliefRep.multiply(ipCur[k], ob));
                     }
                 }
                 rescaleLayer(ipNext, minState[i + 1], maxState[i + 1]);
@@ -410,13 +411,13 @@ public class SumDC extends AbstractConstraint {
                     final double ob = outsideBelief(idx, v);
                     double belief = beliefRep.zero();
                     final int kHi = Math.min(maxState[i + 1], maxState[i] + v);
+                    // no zero test, as in the forward pass: both products are
+                    // +0.0 when op[i][k] is zero
                     for (int k = Math.max(minState[i + 1], minState[i] + v); k <= kHi; k++) {
-                        if (!beliefRep.isZero(opCur[k])) {
-                            // add the combination of op[i][k] and outsideBelief(idx,v) to op[i-1][k-v]
-                            opPrev[k - v] = beliefRep.add(opPrev[k - v], beliefRep.multiply(opCur[k], ob));
-                            // add the combination of ip[i][k-v] and op[i][k] to belief
-                            belief = beliefRep.add(belief, beliefRep.multiply(ipCur[k - v], opCur[k]));
-                        }
+                        // add the combination of op[i][k] and outsideBelief(idx,v) to op[i-1][k-v]
+                        opPrev[k - v] = beliefRep.add(opPrev[k - v], beliefRep.multiply(opCur[k], ob));
+                        // add the combination of ip[i][k-v] and op[i][k] to belief
+                        belief = beliefRep.add(belief, beliefRep.multiply(ipCur[k - v], opCur[k]));
                     }
                     setLocalBelief(idx, v, belief);
                 }
