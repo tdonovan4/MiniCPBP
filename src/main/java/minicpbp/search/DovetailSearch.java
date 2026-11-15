@@ -201,9 +201,10 @@ public final class DovetailSearch {
                 LDSearch search = searchFactory.get();
                 search.setSinglePassCap(cap);
                 long p0 = System.currentTimeMillis();
-                final long deadline = p0 + budget;
+                final Deadline deadline = new Deadline(p0 + budget);
                 SearchStatistics st = search.solve(
-                        ss -> System.currentTimeMillis() >= deadline || found.getAsBoolean());
+                        ss -> deadline.passed() || found.getAsBoolean());
+                deadline.cancel();
                 long pms = System.currentTimeMillis() - p0;
 
                 String status;
