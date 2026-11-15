@@ -68,7 +68,7 @@ import minicpbp.util.BPStats;
 final class TopoScheduler implements BPScheduler {
 
     private final BPGraph graph;
-    private final double tol;
+    private double tol;
     private final boolean rooted;
     private final boolean componentOnly;
 
@@ -86,6 +86,7 @@ final class TopoScheduler implements BPScheduler {
 
     @Override
     public void beginInvocation(boolean fullDirty) {
+        tol = BPConfig.RESIDUAL_TOL;
         graph.rebuild(BPConfig.QUERY_ONLY);
         if (BPConfig.INCREMENTAL_DIRTY) graph.dirtyChanged(fullDirty);
         else graph.dirtyAll();

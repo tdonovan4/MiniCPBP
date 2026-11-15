@@ -152,7 +152,8 @@ public final class BPConfig {
     /** compute the per-sweep entropy scans only where something reads them
      *  (see static init); semantics-preserving, unlike MEASURE_NO_RESIDUAL */
     public static final boolean LEAN_MONITOR;
-    public static final double RESIDUAL_TOL;
+    /** not final: exp.TreeOracle's cold reference BP lowers it for one rolled-back run (topo reads it per invocation) */
+    public static double RESIDUAL_TOL;
     public static final String STATS_FILE;
     public static final boolean DUMP_GRAPH;
     /** ignore the engine's entropy-based early stops, so that a fixed sweep
