@@ -71,9 +71,9 @@ public final class LocalGate implements Predicate<IntVar> {
     /** evaluated by MiniCP before BP at every node; the verdict is kept for the branching */
     @Override
     public boolean test(IntVar x) {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         boolean v = decide(x.getBaseVar());
-        nanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) nanos += System.nanoTime() - t0;
         tests++;
         if (v) positives++;
         lastX = x;
@@ -145,7 +145,8 @@ public final class LocalGate implements Predicate<IntVar> {
 
     public String summary() {
         return String.format(java.util.Locale.ROOT,
-                "mode=%s,hops=%d,producerSP=%.2f,linkMin=%.2f,tests=%d,positives=%d,factorsScored=%d,gateMs=%d,budgetHits=%d,memoMisses=%d",
-                mode, MAX_HOPS, ReachProbe.PRODUCER_SP, linkMin, tests, positives, factorsScored, nanos / 1000000, budgetHits, memoMisses);
+                "mode=%s,hops=%d,producerSP=%.2f,linkMin=%.2f,tests=%d,positives=%d,factorsScored=%d,gateMs=%s,budgetHits=%d,memoMisses=%d",
+                mode, MAX_HOPS, ReachProbe.PRODUCER_SP, linkMin, tests, positives, factorsScored,
+                minicpbp.util.RunMode.MEASURE ? Long.toString(nanos / 1000000) : "NA", budgetHits, memoMisses);
     }
 }

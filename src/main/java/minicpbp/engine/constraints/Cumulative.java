@@ -180,7 +180,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
             resetLocalBelief(); // silent uniform: the primary copy counts
             return;
         }
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         SchedStats.calls++;
         int n = start.length;
         if (dom == null) {
@@ -199,7 +199,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
         for (int i = 0; i < n; i++) {
             if (demand[i] > capa && duration[i] > 0) {
                 SchedStats.inconsistent++;
-                SchedStats.nanos += System.nanoTime() - t0;
+                if (minicpbp.util.RunMode.MEASURE) SchedStats.nanos += System.nanoTime() - t0;
                 throw InconsistencyException.INCONSISTENCY;
             }
             int lo = start[i].min(), hi = start[i].max();
@@ -279,7 +279,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
                 setLocalBelief(i, dom[i][k], beliefRep.std2rep(out[i][k]));
             }
         }
-        SchedStats.nanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) SchedStats.nanos += System.nanoTime() - t0;
     }
 
     /**
@@ -298,7 +298,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
         IntVar bx = x.getBaseVar();
         for (int i = 0; i < start.length; i++) if (start[i].getBaseVar() == bx) { pos = i; break; }
         if (pos < 0 || start[pos] != x) return false; // a view of the variable: the value map is not the identity
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         SchedStats.calls++;
         int n = start.length;
         if (dom == null) {
@@ -314,7 +314,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
             }
         }
         for (int i = 0; i < n; i++) {
-            if (demand[i] > capa && duration[i] > 0) { SchedStats.nanos += System.nanoTime() - t0; return false; }
+            if (demand[i] > capa && duration[i] > 0) { if (minicpbp.util.RunMode.MEASURE) SchedStats.nanos += System.nanoTime() - t0; return false; }
             int lo = start[i].min(), hi = start[i].max();
             if (dom[i].length < hi - lo + 1) {
                 dom[i] = new int[hi - lo + 1];
@@ -337,7 +337,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
             if (bp == null) bp = new CumulativeBP();
             int status = bp.run(n, dom, domSize, a, duration, demand, capa,
                     SchedulingConfig.BP_ITERS, SchedulingConfig.BP_EPS, SchedulingConfig.BP_MIN_SWEEPS, 0L, out);
-            if (status != CumulativeBP.OK) { SchedStats.nanos += System.nanoTime() - t0; return false; }
+            if (status != CumulativeBP.OK) { if (minicpbp.util.RunMode.MEASURE) SchedStats.nanos += System.nanoTime() - t0; return false; }
             SchedStats.bpCalls++;
             SchedStats.bpSweeps += bp.lastSweeps();
         }
@@ -347,7 +347,7 @@ public class Cumulative extends AbstractConstraint implements minicpbp.engine.co
             int k = java.util.Arrays.binarySearch(dom[pos], 0, domSize[pos], v);
             scores[q] = (k >= 0) ? out[pos][k] : 0.0;
         }
-        SchedStats.nanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) SchedStats.nanos += System.nanoTime() - t0;
         return true;
     }
 

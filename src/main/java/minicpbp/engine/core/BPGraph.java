@@ -132,7 +132,7 @@ final class BPGraph implements MarginalResync {
     }
 
     int rebuild(boolean queryOnly) {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         stamp++;
         nFactors = 0;
         nScope = 0;
@@ -172,6 +172,7 @@ final class BPGraph implements MarginalResync {
         if ((minicpbp.util.BPConfig.REGION_HOPS > 0 || minicpbp.util.BPConfig.REGION_FRAC > 0) && preferredRoot != null)
             pruneOutsideRegion(minicpbp.util.BPConfig.REGION_HOPS > 0 ? minicpbp.util.BPConfig.REGION_HOPS : Integer.MAX_VALUE,
                     minicpbp.util.BPConfig.REGION_FRAC);
+        if (minicpbp.util.RunMode.PERF) return nFactors; // the rest is statistics
         BPStats.schedulesBuilt++;
         BPStats.lastFactors = nFactors;
         BPStats.lastVars = nVars;
@@ -673,10 +674,12 @@ final class BPGraph implements MarginalResync {
      * sweep does, and before the engine reads entropies.
      */
     void normalizeMarginals() {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         for (int v = 0; v < nVars; v++) varOf[v].normalizeMarginals();
-        BPStats.normalizeNanos += System.nanoTime() - t0;
-        BPStats.normalizeCalls++;
+        if (minicpbp.util.RunMode.MEASURE) {
+            BPStats.normalizeNanos += System.nanoTime() - t0;
+            BPStats.normalizeCalls++;
+        }
     }
 
     /* ====================================================================== */

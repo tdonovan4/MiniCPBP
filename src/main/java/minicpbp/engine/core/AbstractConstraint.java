@@ -574,7 +574,9 @@ public abstract class AbstractConstraint implements Constraint {
      * scheduling
      */
     public double updateMessagesInPlace(MarginalResync resync) {
-        long _t0 = System.nanoTime();
+        // phase timers: measurement only (each clock read costs ~1.3 us on some hosts)
+        final boolean timed = minicpbp.util.RunMode.MEASURE;
+        long _t0 = timed ? System.nanoTime() : 0;
         if (cavityBelief == null) {
             cavityBelief = new double[vars.length][];
             prevLocalBelief = new double[vars.length][];
@@ -683,19 +685,19 @@ public abstract class AbstractConstraint implements Constraint {
                 }
             }
         }
-        long _t1 = System.nanoTime();
-        minicpbp.util.BPStats.phase1Nanos += _t1 - _t0;
+        long _t1 = timed ? System.nanoTime() : 0;
+        if (timed) minicpbp.util.BPStats.phase1Nanos += _t1 - _t0;
         // phase 2: the weighted counting
         if (!minicpbp.util.DeltaProbe.HOOK || !probeBeforeUpdateBelief())
             updateBelief();
-        long _t2 = System.nanoTime();
-        minicpbp.util.BPStats.phase2Nanos += _t2 - _t1;
+        long _t2 = timed ? System.nanoTime() : 0;
+        if (timed) minicpbp.util.BPStats.phase2Nanos += _t2 - _t1;
         // phase 3: publish the new messages into the marginals
         double residual = 0.0;
         for (int i = 0; i < vars.length; i++) {
             msgResidual[i] = 0.0;
             if (vars[i].isBound()) continue; // a "certainly true" message changes nothing
-            minicpbp.util.BPStats.msgWrites++;
+            if (timed) minicpbp.util.BPStats.msgWrites++;
             int s = vars[i].fillArray(domainValues);
             normalizeLocalCached(i, s);
             double mass = 0.0;
@@ -747,7 +749,7 @@ public abstract class AbstractConstraint implements Constraint {
                 vars[i].normalizeMarginals(); // keep the product away from underflow
             }
         }
-        minicpbp.util.BPStats.phase3Nanos += System.nanoTime() - _t2;
+        if (timed) minicpbp.util.BPStats.phase3Nanos += System.nanoTime() - _t2;
         return residual;
     }
 

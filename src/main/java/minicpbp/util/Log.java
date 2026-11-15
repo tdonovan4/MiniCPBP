@@ -36,14 +36,17 @@ public final class Log {
     // ===== Flag setters =====
 
     public static void setTraceBP(boolean flag) {
+        if (flag) RunMode.requireMeasure("traceBP");
         traceBP = flag;
     }
 
     public static void setTraceSearch(boolean flag) {
+        if (flag) RunMode.requireMeasure("traceSearch");
         traceSearch = flag;
     }
 
     public static void setTraceEntropy(boolean flag) {
+        if (flag) RunMode.requireMeasure("traceEntropy");
         traceEntropy = flag;
     }
 
@@ -52,10 +55,12 @@ public final class Log {
     }
 
     public static void setTraceGradient(boolean flag) {
+        if (flag) RunMode.requireMeasure("traceGradient");
         traceGradient = flag;
     }
 
     public static void setTraceConstraint(boolean flag) {
+        if (flag) RunMode.requireMeasure("traceConstraint");
         traceConstraint = flag;
     }
 

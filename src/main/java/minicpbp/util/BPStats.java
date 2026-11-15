@@ -176,7 +176,17 @@ public final class BPStats {
     }
 
     public static String line() {
-        return "bp=[" + BPConfig.describe() + "]"
+        // perf mode keeps only the counters that also drive the solver; every
+        // timer and the other counters are not maintained there, so they are
+        // left out rather than reported as zeros
+        if (RunMode.PERF)
+            return "mode=perf bp=[" + BPConfig.describe() + "]"
+                    + " bpCalls=" + calls
+                    + " bpInvocations=" + invocations
+                    + " bpTriggerRate=" + (calls == 0 ? 0.0 : (double) invocations / calls)
+                    + " bpFactorUpdates=" + factorUpdates
+                    + " bpUpdatesPerInvocation=" + (invocations == 0 ? 0.0 : (double) factorUpdates / invocations);
+        return "mode=measure bp=[" + BPConfig.describe() + "]"
                 + " bpCalls=" + calls
                 + " bpInvocations=" + invocations
                 + " bpTriggerRate=" + (calls == 0 ? 0.0 : (double) invocations / calls)

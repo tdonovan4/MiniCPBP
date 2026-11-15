@@ -65,11 +65,11 @@ final class ResidualScheduler implements BPScheduler {
         for (int i = 0; i < n; i++) {
             int f = graph.orderAt(i);
             if (graph.isPruned(f)) {
-                BPStats.factorSkipsPruned++;
+                if (minicpbp.util.RunMode.MEASURE) BPStats.factorSkipsPruned++;
                 continue;
             }
             if (!graph.isDirty(f)) {
-                BPStats.factorSkipsClean++;
+                if (minicpbp.util.RunMode.MEASURE) BPStats.factorSkipsClean++;
                 continue;
             }
             // above any real residual (messages are probabilities, so a residual

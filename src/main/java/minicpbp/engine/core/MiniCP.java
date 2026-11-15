@@ -128,6 +128,7 @@ public class MiniCP implements Solver {
     private IntVar[] branchingOrder;
 
     public MiniCP(StateManager sm) {
+        minicpbp.util.RunMode.check(); // a misconfigured perf run fails here
         this.sm = sm;
         variables = new StateStack<>(sm);
         constraints = new StateStack<>(sm);
@@ -143,6 +144,7 @@ public class MiniCP implements Solver {
     }
 
     public MiniCP(StateManager sm, long seed) {
+        minicpbp.util.RunMode.check();
         this.sm = sm;
         variables = new StateStack<>(sm);
         constraints = new StateStack<>(sm);
@@ -492,6 +494,11 @@ public class MiniCP implements Solver {
     public void beliefPropa() {
         if (minicpbp.util.BPConfig.SHADOW_SPECS.length > 0 && minicpbp.util.BPConfig.ROOT_AT_DECISION) {
             shadowRegions();
+            return;
+        }
+        // bpNanos is a statistic, and also the input of the timeCap reuse rule
+        if (minicpbp.util.RunMode.PERF && TIME_CAP <= 0) {
+            beliefPropaImpl();
             return;
         }
         long t0 = System.nanoTime();
@@ -1100,7 +1107,8 @@ public class MiniCP implements Solver {
             preBPVar = preTieTol >= 0 ? tieBreakVar() : normalizedEntropyVar();
             preBPCall = minicpbp.util.BPStats.calls + 1;
         }
-        if (lastBPNode == null) lastBPNode = sm.makeStateInt(0);
+        // read only by the calibration and reuse-shadow measurements
+        if (lastBPNode == null && minicpbp.util.RunMode.MEASURE) lastBPNode = sm.makeStateInt(0);
         minicpbp.util.BPStats.calls++;
         // Probe K (BP_PROBE_PROTOCOL.md amendment 7): the decision-keyed
         // trigger replaces the 5 % gate below. Static final, folded when off.
@@ -1196,6 +1204,7 @@ public class MiniCP implements Solver {
                     scSweeps[0] = iter;
                     if (sc1[0] == null) { sc1[0] = staleConfidence(confX); sc1[1] = domDist(confX, scVals); }
                 }
+                if (minicpbp.util.RunMode.PERF) return sweepMonitor(iter, entropy, rule);
                 long t0 = System.nanoTime();
                 try {
                     return sweepMonitor(iter, entropy, rule);
@@ -1242,6 +1251,7 @@ public class MiniCP implements Solver {
      */
     private boolean sweepMonitor(int iter, double[] entropy,
                                  minicpbp.util.BPConfig.StopRule rule) {
+        if (minicpbp.util.RunMode.PERF) return sweepMonitorPerf(iter, entropy, rule);
         Log.bpIteration(iter, variables);
         // Probe H (BP_PROBE_PROTOCOL.md amendment 4): per-sweep
         // decision trace; static final gate, dead code when off
@@ -1374,7 +1384,7 @@ public class MiniCP implements Solver {
      * can be inherited and the dirty set must be seeded in full
      */
     private boolean warmEntry() {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         Iterator<IntVar> iterator = variables.iterator();
         while (iterator.hasNext()) {
             iterator.next().resetMarginals();
@@ -1399,8 +1409,10 @@ public class MiniCP implements Solver {
         // before the branching decision and before the propagation that
         // followed it. A damping semantics nobody chose.
         prevOutsideBeliefRecorded = false;
-        minicpbp.util.BPStats.warmEntryRebuilds++;
-        minicpbp.util.BPStats.warmEntryNanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) {
+            minicpbp.util.BPStats.warmEntryRebuilds++;
+            minicpbp.util.BPStats.warmEntryNanos += System.nanoTime() - t0;
+        }
         if (!noMass) return false;
         // F2: propagation since the last invocation can have removed every value
         // that carried mass, leaving a zero vector no message passing recovers
@@ -1661,6 +1673,57 @@ public class MiniCP implements Solver {
      * computes and returns the current problem entropy (avg normalized entropy of the variables)
      * note: only considers unbound branching variables
      */
+    /**
+     * {@link #sweepMonitor} in perf mode: the same stop decisions, without
+     * timers or traces (perf mode rejects them), and without computing the
+     * problem entropy where only its "== 0" correctness stop is read: that is
+     * decided by the early-exit {@link #someBranchingMarginalUncertain()}.
+     */
+    private boolean sweepMonitorPerf(int iter, double[] entropy, minicpbp.util.BPConfig.StopRule rule) {
+        if (dampingMessages())
+            prevOutsideBeliefRecorded = true;
+        if (rule == minicpbp.util.BPConfig.StopRule.SHIPPED) {
+            double previousEntropy = entropy[0];
+            double currentEntropy = problemEntropy();
+            entropy[0] = currentEntropy;
+            if (currentEntropy == 0) return true;
+            if (smallestVariableEntropy() <= MIN_VAR_ENTROPY) return true;
+            return (iter > 1) && (currentEntropy == previousEntropy);
+        }
+        if (!someBranchingMarginalUncertain()) return true;
+        switch (rule) {
+            case FIXED:
+                return false;
+            case CONVERGE:
+                return marginalMovement() <= minicpbp.util.BPConfig.CONVERGE_TOL;
+            default:
+                return decisionSettled();
+        }
+    }
+
+    private int[] uncertainScanVals = new int[0];
+
+    /**
+     * true iff problemEntropy() > 0: some unbound branching variable has a
+     * marginal strictly inside (0,1), the only marginals SparseSetDomain.entropy()
+     * counts (each such term m log m is nonzero, and the sum is of nonnegative
+     * normalised entropies)
+     */
+    private boolean someBranchingMarginalUncertain() {
+        Iterator<IntVar> iterator = variables.iterator();
+        while (iterator.hasNext()) {
+            IntVar v = iterator.next();
+            if (v.isBound() || !v.isForBranching()) continue;
+            if (uncertainScanVals.length < v.size()) uncertainScanVals = new int[2 * v.size()];
+            int s = v.fillArray(uncertainScanVals);
+            for (int j = 0; j < s; j++) {
+                double m = beliefRep.rep2std(v.marginal(uncertainScanVals[j]));
+                if (m > 0 && m < 1.0) return true;
+            }
+        }
+        return false;
+    }
+
     private double problemEntropy() {
         double sumNormalizedEntropy = 0.0;
         int nbUnboundBranchingVar = 0;

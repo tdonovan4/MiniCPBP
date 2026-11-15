@@ -149,6 +149,8 @@ public class SolveXCSPFZN {
 
 	public void solve(ModelFormatFrontend frontend) {
 		long t0 = System.currentTimeMillis();
+		// the time limit, tested at every node without a clock read
+		final minicpbp.search.Deadline timeUp = new minicpbp.search.Deadline(t0 + timeout * 1000L);
 
 		minicp.setTraceBPFlag(traceBP);
 		minicp.setTraceSearchFlag(traceSearch);
@@ -381,15 +383,15 @@ public class SolveXCSPFZN {
 			//find a solution that maximize the cost function
 			case MAX:
 				stats = search.optimize(minicp.maximize(frontend.getObjectiveVar()),
-						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+						ss -> timeUp.passed());
 				break;
 			//find a solution that minimize the cost function
 			case MIN:
 				stats = search.optimize(minicp.minimize(frontend.getObjectiveVar()),
-						ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L));
+						ss -> timeUp.passed());
 				break;
 			default:
-				Predicate<SearchStatistics> limit = ss -> (System.currentTimeMillis() - t0 >= timeout * 1000L || (!enumerateSolutions && foundSolution.get()));
+				Predicate<SearchStatistics> limit = ss -> (timeUp.passed() || (!enumerateSolutions && foundSolution.get()));
 				//find a solution that satisfies all constraints without restart
 				if(!restart) {
 					// combined search (RESEARCH_PLAN.md, "P4b/P4c"): phase 1 is the configured search, cut after
@@ -440,10 +442,12 @@ public class SolveXCSPFZN {
 						stats = search.solve(limit);
 					} else {
 						long switchAt = t0 + (long) ((switchFrac > 0 ? switchFrac : 1.0) * timeout * 1000L);
+						final minicpbp.search.Deadline switchUp = new minicpbp.search.Deadline(switchAt);
 						long w0 = minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates;
 						long work = bpWork > 0 ? bpWork : Long.MAX_VALUE;
-						stats = search.solve(limit.or(ss -> System.currentTimeMillis() >= switchAt || ss.numberOfFailures() > failBudget
+						stats = search.solve(limit.or(ss -> switchUp.passed() || ss.numberOfFailures() > failBudget
 								|| minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w0 >= work));
+						switchUp.cancel();
 						long tSwitch = System.currentTimeMillis() - t0;
 						// -Dminicpbp.debug.lateWeights=true (measurement runs only): at the end of the BP phase, print the
 						// concentration of dom/wdeg's failure counts and stop, skipping the later phases
@@ -495,6 +499,7 @@ public class SolveXCSPFZN {
 				break;
 		}
 		Long runtime = System.currentTimeMillis() - t0;
+		timeUp.cancel();
 
 		// Print result
 

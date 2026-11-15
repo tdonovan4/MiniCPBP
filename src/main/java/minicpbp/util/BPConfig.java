@@ -359,7 +359,7 @@ public final class BPConfig {
         // identical in every configuration -- both quantities are pure
         // functions of state the monitor does not modify -- so unlike
         // measureNoResidual it needs no soundness guard.
-        LEAN_MONITOR = Boolean.parseBoolean(System.getProperty("minicpbp.bp.leanMonitor", "false"));
+        LEAN_MONITOR = Boolean.parseBoolean(System.getProperty("minicpbp.bp.leanMonitor", "true")); // behaviour-neutral, so on by default
         if (INCREMENTAL_DIRTY && !WARM_START)
             throw new IllegalStateException("c incrementalDirty requires warmStart: the reset destroys "
                     + "the stored messages whose staleness the dirty set tracks");
