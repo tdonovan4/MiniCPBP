@@ -128,6 +128,7 @@ public class MiniCP implements Solver {
     private IntVar[] branchingOrder;
 
     public MiniCP(StateManager sm) {
+        minicpbp.util.RunMode.check(); // a misconfigured perf run fails here
         this.sm = sm;
         variables = new StateStack<>(sm);
         constraints = new StateStack<>(sm);
@@ -143,6 +144,7 @@ public class MiniCP implements Solver {
     }
 
     public MiniCP(StateManager sm, long seed) {
+        minicpbp.util.RunMode.check();
         this.sm = sm;
         variables = new StateStack<>(sm);
         constraints = new StateStack<>(sm);
