@@ -1251,6 +1251,7 @@ public class MiniCP implements Solver {
      */
     private boolean sweepMonitor(int iter, double[] entropy,
                                  minicpbp.util.BPConfig.StopRule rule) {
+        if (minicpbp.util.RunMode.PERF) return sweepMonitorPerf(iter, entropy, rule);
         Log.bpIteration(iter, variables);
         // Probe H (BP_PROBE_PROTOCOL.md amendment 4): per-sweep
         // decision trace; static final gate, dead code when off
@@ -1672,6 +1673,57 @@ public class MiniCP implements Solver {
      * computes and returns the current problem entropy (avg normalized entropy of the variables)
      * note: only considers unbound branching variables
      */
+    /**
+     * {@link #sweepMonitor} in perf mode: the same stop decisions, without
+     * timers or traces (perf mode rejects them), and without computing the
+     * problem entropy where only its "== 0" correctness stop is read: that is
+     * decided by the early-exit {@link #someBranchingMarginalUncertain()}.
+     */
+    private boolean sweepMonitorPerf(int iter, double[] entropy, minicpbp.util.BPConfig.StopRule rule) {
+        if (dampingMessages())
+            prevOutsideBeliefRecorded = true;
+        if (rule == minicpbp.util.BPConfig.StopRule.SHIPPED) {
+            double previousEntropy = entropy[0];
+            double currentEntropy = problemEntropy();
+            entropy[0] = currentEntropy;
+            if (currentEntropy == 0) return true;
+            if (smallestVariableEntropy() <= MIN_VAR_ENTROPY) return true;
+            return (iter > 1) && (currentEntropy == previousEntropy);
+        }
+        if (!someBranchingMarginalUncertain()) return true;
+        switch (rule) {
+            case FIXED:
+                return false;
+            case CONVERGE:
+                return marginalMovement() <= minicpbp.util.BPConfig.CONVERGE_TOL;
+            default:
+                return decisionSettled();
+        }
+    }
+
+    private int[] uncertainScanVals = new int[0];
+
+    /**
+     * true iff problemEntropy() > 0: some unbound branching variable has a
+     * marginal strictly inside (0,1), the only marginals SparseSetDomain.entropy()
+     * counts (each such term m log m is nonzero, and the sum is of nonnegative
+     * normalised entropies)
+     */
+    private boolean someBranchingMarginalUncertain() {
+        Iterator<IntVar> iterator = variables.iterator();
+        while (iterator.hasNext()) {
+            IntVar v = iterator.next();
+            if (v.isBound() || !v.isForBranching()) continue;
+            if (uncertainScanVals.length < v.size()) uncertainScanVals = new int[2 * v.size()];
+            int s = v.fillArray(uncertainScanVals);
+            for (int j = 0; j < s; j++) {
+                double m = beliefRep.rep2std(v.marginal(uncertainScanVals[j]));
+                if (m > 0 && m < 1.0) return true;
+            }
+        }
+        return false;
+    }
+
     private double problemEntropy() {
         double sumNormalizedEntropy = 0.0;
         int nbUnboundBranchingVar = 0;
