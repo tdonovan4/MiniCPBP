@@ -145,7 +145,8 @@ public final class LocalGate implements Predicate<IntVar> {
 
     public String summary() {
         return String.format(java.util.Locale.ROOT,
-                "mode=%s,hops=%d,producerSP=%.2f,linkMin=%.2f,tests=%d,positives=%d,factorsScored=%d,gateMs=%d,budgetHits=%d,memoMisses=%d",
-                mode, MAX_HOPS, ReachProbe.PRODUCER_SP, linkMin, tests, positives, factorsScored, nanos / 1000000, budgetHits, memoMisses);
+                "mode=%s,hops=%d,producerSP=%.2f,linkMin=%.2f,tests=%d,positives=%d,factorsScored=%d,gateMs=%s,budgetHits=%d,memoMisses=%d",
+                mode, MAX_HOPS, ReachProbe.PRODUCER_SP, linkMin, tests, positives, factorsScored,
+                minicpbp.util.RunMode.MEASURE ? Long.toString(nanos / 1000000) : "NA", budgetHits, memoMisses);
     }
 }

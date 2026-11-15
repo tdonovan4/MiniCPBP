@@ -66,7 +66,7 @@ public final class SchedStats {
                 + " schedBpDeclined=" + bpDeclined
                 + " schedBpNumFallback=" + bpNumericalFallbacks
                 + " schedInconsistent=" + inconsistent
-                + " schedMs=" + (nanos / 1000000)
+                + (RunMode.MEASURE ? " schedMs=" + (nanos / 1000000) : "")
                 + " schedMaxOps=" + maxOpsPerSweep
                 + " mddCalls=" + mddCalls
                 + " intervalCalls=" + intervalCalls
