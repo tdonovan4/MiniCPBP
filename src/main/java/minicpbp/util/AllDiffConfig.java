@@ -4,13 +4,18 @@
  * Experiment configuration for AllDifferentDC's counting routines.
  * Added 2026-08-16 (see IMPLEMENTATION_LOG.md).
  *
- * Everything defaults to the behaviour MiniCPBP had before the experiment
- * (Heap's algorithm below the threshold, Soules U^3 above it), so an
- * unconfigured run is arm A of Phase 3 bit for bit.
+ * Defaults: the subset DP below the threshold, Soules U^3 above it. The DP
+ * computes the same exact counts as Heap's algorithm, the pre-experiment
+ * default, in O(2^n n) instead of O(n^2 (n-1)!) per update, without division
+ * and with nonnegative sums only; results differ from Heap by rounding, so
+ * -Dminicpbp.alldiff.exact=heap is needed to reproduce arm A of Phase 3 bit
+ * for bit (default changed 2026-11-15: 1.56-1.60x per node on
+ * qwh-o30-h374-14, no node-count change on the other screening instances
+ * under cold start).
  *
  * System properties
  * -----------------
- *  minicpbp.alldiff.exact        heap | ryser | dp        (default heap)
+ *  minicpbp.alldiff.exact        heap | ryser | dp        (default dp)
  *  minicpbp.alldiff.exactMaxDim  largest nbVal handled exactly (default 7,
  *                                which is the pre-existing test
  *                                nbVal - 1 <= exactPermanentThreshold = 6)
@@ -53,7 +58,7 @@ public final class AllDiffConfig {
     public static final String STATS_FILE;
 
     static {
-        EXACT = ExactRoutine.valueOf(System.getProperty("minicpbp.alldiff.exact", "heap").toUpperCase());
+        EXACT = ExactRoutine.valueOf(System.getProperty("minicpbp.alldiff.exact", "dp").toUpperCase());
         EXACT_MAX_DIM = Integer.parseInt(System.getProperty("minicpbp.alldiff.exactMaxDim", "7"));
         APPROX = ApproxRoutine.valueOf(System.getProperty("minicpbp.alldiff.approx", "soules").toUpperCase());
         BP_ITERS = Integer.parseInt(System.getProperty("minicpbp.alldiff.bpIters", "5"));

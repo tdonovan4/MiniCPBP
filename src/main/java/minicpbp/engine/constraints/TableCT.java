@@ -158,6 +158,7 @@ public class TableCT extends AbstractConstraint {
             }
             supportedTuples.and(supporti);
         }
+        markDomains(); // before any removal below, which then invalidates it
 
         for (int i = 0; i < xLength; i++) {
             int s = x[i].fillArray(domainValues);
@@ -178,16 +179,28 @@ public class TableCT extends AbstractConstraint {
         // Compute supportedTuples as
         // supportedTuples = (supports[0][x[0].min()] | ... | supports[0][x[0].max()] ) & ... &
         //                   (supports[x.length][x[0].min()] | ... | supports[x.length][x[0].max()] )
-        // Initialize beliefs as well.
-        supportedTuples.set(0, tableLength); // set them all to true
-        for (int i = 0; i < xLength; i++) {
-            supporti.clear(); // set them all to false
-            int s = x[i].fillArray(domainValues);
-            for (int j = 0; j < s; j++) {
-                supporti.or(supports[i][domainValues[j] - ofs[i]]);
-                beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
+        // Initialize beliefs as well. supportedTuples is a function of the
+        // domains only, so it is reused while they are provably unchanged (the
+        // propagate() of this node, earlier sweeps of this BP invocation).
+        if (domainsUnchangedSinceMark()) {
+            assert supportedTuples.equals(recomputedSupportedTuples()) : "stale supportedTuples reused";
+            for (int i = 0; i < xLength; i++) {
+                int s = x[i].fillArray(domainValues);
+                for (int j = 0; j < s; j++)
+                    beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
             }
-            supportedTuples.and(supporti);
+        } else {
+            supportedTuples.set(0, tableLength); // set them all to true
+            for (int i = 0; i < xLength; i++) {
+                supporti.clear(); // set them all to false
+                int s = x[i].fillArray(domainValues);
+                for (int j = 0; j < s; j++) {
+                    supporti.or(supports[i][domainValues[j] - ofs[i]]);
+                    beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
+                }
+                supportedTuples.and(supporti);
+            }
+            markDomains();
         }
 
         if (scaledBelief == null) {
@@ -245,6 +258,20 @@ public class TableCT extends AbstractConstraint {
                 setLocalBelief(i, v, beliefs[i][v - ofs[i]]);
             }
         }
+    }
+
+    /** supportedTuples from scratch, for the assertion guarding its reuse */
+    private BitSet recomputedSupportedTuples() {
+        BitSet t = new BitSet(tableLength);
+        t.set(0, tableLength);
+        int[] vals = new int[domainValues.length];
+        for (int i = 0; i < xLength; i++) {
+            BitSet si = new BitSet(tableLength);
+            int s = x[i].fillArray(vals);
+            for (int j = 0; j < s; j++) si.or(supports[i][vals[j] - ofs[i]]);
+            t.and(si);
+        }
+        return t;
     }
 
     // FOR SIMPLE COUNTING:

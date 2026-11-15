@@ -157,8 +157,9 @@ public class AllDifferentDC extends AbstractConstraint {
 
     /**
      * Allocates the scratch space needed by the experimental counting routines
-     * (see IMPLEMENTATION_LOG.md, 2026-08-16). Nothing is allocated for the
-     * default configuration (Heap + Soules).
+     * (see IMPLEMENTATION_LOG.md, 2026-08-16). Under the default
+     * configuration (DP + Soules) that is the DP workspace and a minors buffer
+     * of exactMaxDim x exactMaxDim; nothing is allocated for Heap + Soules.
      */
     private void setupExperimentRoutines() {
         AllDiffStats.install();
@@ -167,11 +168,13 @@ public class AllDifferentDC extends AbstractConstraint {
             int maxDim = Math.min(dim, AllDiffConfig.EXACT_MAX_DIM);
             if (AllDiffConfig.EXACT == AllDiffConfig.ExactRoutine.DP && maxDim >= 1)
                 dpWorkspace = new Permanent.DpWorkspace(Math.min(maxDim, 24));
-            minors = new double[dim][dim];
+            // the exact routines only run while nbVal <= EXACT_MAX_DIM, so they
+            // never index the buffer beyond maxDim x maxDim
+            minors = new double[maxDim][maxDim];
         }
         if (AllDiffConfig.APPROX == AllDiffConfig.ApproxRoutine.BP) {
             bp = new AssignmentBP(dim, dim);
-            if (minors == null) minors = new double[dim][dim];
+            if (minors == null || minors.length < dim) minors = new double[dim][dim];
         }
     }
 

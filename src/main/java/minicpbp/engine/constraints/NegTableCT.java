@@ -137,6 +137,7 @@ public class NegTableCT extends AbstractConstraint {
             }
             menacing.and(conflictsi);
         }
+        markDomains(); // before any removal below, which then invalidates it
 
         Long prodDomains = 1L;
         for (int i = 0; i < xLength; i++) {
@@ -159,18 +160,44 @@ public class NegTableCT extends AbstractConstraint {
 	    }
     }
 
+    /** menacing from scratch, for the assertion guarding its reuse */
+    private BitSet recomputedMenacing() {
+        BitSet t = new BitSet(tableLength);
+        t.set(0, tableLength);
+        int[] vals = new int[domainValues.length];
+        for (int i = 0; i < xLength; i++) {
+            BitSet ci = new BitSet(tableLength);
+            int s = x[i].fillArray(vals);
+            for (int j = 0; j < s; j++) ci.or(conflicts[i][vals[j] - ofs[i]]);
+            t.and(ci);
+        }
+        return t;
+    }
+
     @Override
     public void updateBelief() {
-        menacing.set(0, tableLength); // set them all to true
-
-        for (int i = 0; i < xLength; i++) {
-            conflictsi.clear(); // set them all to false
-            int s = x[i].fillArray(domainValues);
-            for (int j = 0; j < s; j++) {
-                conflictsi.or(conflicts[i][domainValues[j] - ofs[i]]);
-                beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
+        // menacing is a function of the domains only, so it is reused while they
+        // are provably unchanged (the propagate() of this node, earlier sweeps of
+        // this BP invocation)
+        if (domainsUnchangedSinceMark()) {
+            assert menacing.equals(recomputedMenacing()) : "stale menacing reused";
+            for (int i = 0; i < xLength; i++) {
+                int s = x[i].fillArray(domainValues);
+                for (int j = 0; j < s; j++)
+                    beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
             }
-            menacing.and(conflictsi);
+        } else {
+            menacing.set(0, tableLength); // set them all to true
+            for (int i = 0; i < xLength; i++) {
+                conflictsi.clear(); // set them all to false
+                int s = x[i].fillArray(domainValues);
+                for (int j = 0; j < s; j++) {
+                    conflictsi.or(conflicts[i][domainValues[j] - ofs[i]]);
+                    beliefs[i][domainValues[j] - ofs[i]] = beliefRep.zero();
+                }
+                menacing.and(conflictsi);
+            }
+            markDomains();
         }
 
         // Leave-one-out weights of the menacing tuples from per-tuple

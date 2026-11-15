@@ -18,7 +18,8 @@
 
 package minicpbp.engine.core;
 
-import minicpbp.state.StateSparseWeightedSet;
+import minicpbp.state.StateDoubleArray;
+import minicpbp.state.StateSparseSet;
 import minicpbp.util.Belief;
 
 import java.util.NoSuchElementException;
@@ -31,7 +32,13 @@ import java.lang.Math;
  * Implementation of a domain with a sparse-set
  */
 public class SparseSetDomain implements IntDomain {
-    private StateSparseWeightedSet domain;
+    private StateSparseSet domain;
+    /* the marginals, indexed by v - ofs. One restorable row per variable: it
+     * snapshots once per search level on first write, so a marginal read is a
+     * plain array access and rewriting a whole domain costs one trail entry
+     * instead of one StateDouble entry per value (the representation
+     * StateSparseWeightedSet used, with a weight object per sparse-set slot) */
+    private final StateDoubleArray marg;
     private int[] domainValues; // an array large enough to hold the domain
     private double[] beliefValues; // an auxiliary array as large as domainValues
     private HashMap<Integer, ArrayList<Double>> impactValues; //a map containing the registered impact of an assignement
@@ -58,9 +65,16 @@ public class SparseSetDomain implements IntDomain {
      * expressed against, cached because one factor reads a whole domain in a row */
     private int nzRef;
     private boolean nzRefValid;
+    /* how many entries of nzExp are non-zero. Exponents leave zero only on the
+     * rare out-of-band path, so this is almost always 0, and then the reference
+     * exponent is 0 without a domain scan: every value a cavity can be asked
+     * for is itself a candidate of the scan, so the scan's maximum is exactly 0
+     * whenever its result is read */
+    private int nzExpNonZero;
 
     public SparseSetDomain(Solver cp, int min, int max) {
-        domain = new StateSparseWeightedSet(cp, max - min + 1, min);
+        domain = new StateSparseSet(cp.getStateManager(), max - min + 1, min);
+        marg = cp.getStateManager().makeStateDoubleArray(max - min + 1, cp.getBeliefRep().one()); // not normalized
         domainValues = new int[max - min + 1];
         beliefValues = new double[max - min + 1];
         ofs = min;
@@ -232,11 +246,15 @@ public class SparseSetDomain implements IntDomain {
 
     @Override
     public double marginal(int v) {
-        return domain.weight(v);
+        assert domain.contains(v);
+        return marg.read()[v - ofs];
     }
 
     @Override
-    public void setMarginal(int v, double m) { domain.setWeight(v, m); }
+    public void setMarginal(int v, double m) {
+        assert domain.contains(v);
+        marg.update()[v - ofs] = m;
+    }
 
     @Override
     public void resetMarginals() {
@@ -248,6 +266,7 @@ public class SparseSetDomain implements IntDomain {
         // node is back in the domain at the next one, and these are not trailed
         java.util.Arrays.fill(nzMant, 1.0);
         java.util.Arrays.fill(nzExp, 0);
+        nzExpNonZero = 0;
         java.util.Arrays.fill(zeroCnt, 0);
         nzRefValid = false;
     }
@@ -275,12 +294,14 @@ public class SparseSetDomain implements IntDomain {
         int e = Math.getExponent(operand);
         double aligned = Math.scalb(operand, -e); // exact: a power of two
         nzMant[i] = divide ? nzMant[i] / aligned : nzMant[i] * aligned;
+        boolean wasZero = nzExp[i] == 0;
         nzExp[i] += divide ? -e : e;
         int em = Math.getExponent(nzMant[i]);
         if (nzMant[i] != 0.0 && (em > 512 || em < -512)) {
             nzMant[i] = Math.scalb(nzMant[i], -em);
             nzExp[i] += em;
         }
+        if (wasZero != (nzExp[i] == 0)) nzExpNonZero += wasZero ? 1 : -1;
         minicpbp.util.BPStats.nzRescales++;
     }
 
@@ -304,6 +325,7 @@ public class SparseSetDomain implements IntDomain {
      * so it costs the order of the read, never of a belief cell.
      */
     private int nzRefExp() {
+        if (nzExpNonZero == 0) return 0;
         if (nzRefValid) return nzRef;
         int s = domain.fillArray(domainValues);
         int mx = Integer.MIN_VALUE;
@@ -572,7 +594,20 @@ public class SparseSetDomain implements IntDomain {
 
     @Override
     public String toString() {
-        return domain.toString();
+        // the format StateSparseWeightedSet.toString printed
+        int[] vals = new int[domain.size()]; // not the shared scratch: toString may run inside a method using it
+        int s = domain.fillArray(vals);
+        StringBuilder b = new StringBuilder();
+        b.append("{");
+        for (int j = 0; j < s; j++) {
+            if (j > 0) b.append(", ");
+            b.append(vals[j]);
+            b.append("  <");
+            b.append(marg.read()[vals[j] - ofs]);
+            b.append('>');
+        }
+        b.append("}");
+        return b.toString();
     }
 
 }
