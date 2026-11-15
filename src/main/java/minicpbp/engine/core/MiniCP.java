@@ -496,6 +496,11 @@ public class MiniCP implements Solver {
             shadowRegions();
             return;
         }
+        // bpNanos is a statistic, and also the input of the timeCap reuse rule
+        if (minicpbp.util.RunMode.PERF && TIME_CAP <= 0) {
+            beliefPropaImpl();
+            return;
+        }
         long t0 = System.nanoTime();
         try {
             beliefPropaImpl();
@@ -1102,7 +1107,8 @@ public class MiniCP implements Solver {
             preBPVar = preTieTol >= 0 ? tieBreakVar() : normalizedEntropyVar();
             preBPCall = minicpbp.util.BPStats.calls + 1;
         }
-        if (lastBPNode == null) lastBPNode = sm.makeStateInt(0);
+        // read only by the calibration and reuse-shadow measurements
+        if (lastBPNode == null && minicpbp.util.RunMode.MEASURE) lastBPNode = sm.makeStateInt(0);
         minicpbp.util.BPStats.calls++;
         // Probe K (BP_PROBE_PROTOCOL.md amendment 7): the decision-keyed
         // trigger replaces the 5 % gate below. Static final, folded when off.
@@ -1198,6 +1204,7 @@ public class MiniCP implements Solver {
                     scSweeps[0] = iter;
                     if (sc1[0] == null) { sc1[0] = staleConfidence(confX); sc1[1] = domDist(confX, scVals); }
                 }
+                if (minicpbp.util.RunMode.PERF) return sweepMonitor(iter, entropy, rule);
                 long t0 = System.nanoTime();
                 try {
                     return sweepMonitor(iter, entropy, rule);
@@ -1376,7 +1383,7 @@ public class MiniCP implements Solver {
      * can be inherited and the dirty set must be seeded in full
      */
     private boolean warmEntry() {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         Iterator<IntVar> iterator = variables.iterator();
         while (iterator.hasNext()) {
             iterator.next().resetMarginals();
@@ -1401,8 +1408,10 @@ public class MiniCP implements Solver {
         // before the branching decision and before the propagation that
         // followed it. A damping semantics nobody chose.
         prevOutsideBeliefRecorded = false;
-        minicpbp.util.BPStats.warmEntryRebuilds++;
-        minicpbp.util.BPStats.warmEntryNanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) {
+            minicpbp.util.BPStats.warmEntryRebuilds++;
+            minicpbp.util.BPStats.warmEntryNanos += System.nanoTime() - t0;
+        }
         if (!noMass) return false;
         // F2: propagation since the last invocation can have removed every value
         // that carried mass, leaving a zero vector no message passing recovers

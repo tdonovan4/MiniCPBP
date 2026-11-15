@@ -71,9 +71,9 @@ public final class LocalGate implements Predicate<IntVar> {
     /** evaluated by MiniCP before BP at every node; the verdict is kept for the branching */
     @Override
     public boolean test(IntVar x) {
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         boolean v = decide(x.getBaseVar());
-        nanos += System.nanoTime() - t0;
+        if (minicpbp.util.RunMode.MEASURE) nanos += System.nanoTime() - t0;
         tests++;
         if (v) positives++;
         lastX = x;

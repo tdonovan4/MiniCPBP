@@ -67,12 +67,14 @@ public final class FloodingScheduler implements BPScheduler {
         // that the per-sweep renormalisation can be compared between a schedule
         // that rewrote every marginal from scratch this sweep and one that
         // rewrote only a prefix
-        long t0 = System.nanoTime();
+        long t0 = minicpbp.util.RunMode.MEASURE ? System.nanoTime() : 0;
         iterator = cp.getVariables().iterator();
         while (iterator.hasNext()) {
             iterator.next().normalizeMarginals();
         }
-        BPStats.normalizeNanos += System.nanoTime() - t0;
-        BPStats.normalizeCalls++;
+        if (minicpbp.util.RunMode.MEASURE) {
+            BPStats.normalizeNanos += System.nanoTime() - t0;
+            BPStats.normalizeCalls++;
+        }
     }
 }

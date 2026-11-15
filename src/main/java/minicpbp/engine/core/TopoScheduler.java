@@ -110,12 +110,14 @@ final class TopoScheduler implements BPScheduler {
             for (int i = 0; i < n; i++) {
                 int f = graph.orderAt(inward ? n - 1 - i : i);
                 if (graph.isPruned(f)) {
-                    BPStats.factorSkipsPruned++;
+                    if (minicpbp.util.RunMode.MEASURE) BPStats.factorSkipsPruned++;
                     continue;
                 }
                 if (!graph.isDirty(f)) {
-                    if (graph.isFrozen(f)) BPStats.factorSkipsFrozen++;
-                    else BPStats.factorSkipsClean++;
+                    if (minicpbp.util.RunMode.MEASURE) {
+                        if (graph.isFrozen(f)) BPStats.factorSkipsFrozen++;
+                        else BPStats.factorSkipsClean++;
+                    }
                     continue;
                 }
                 graph.clean(f);
