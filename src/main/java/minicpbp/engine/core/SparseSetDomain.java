@@ -18,7 +18,8 @@
 
 package minicpbp.engine.core;
 
-import minicpbp.state.StateSparseWeightedSet;
+import minicpbp.state.StateDoubleArray;
+import minicpbp.state.StateSparseSet;
 import minicpbp.util.Belief;
 
 import java.util.NoSuchElementException;
@@ -31,7 +32,13 @@ import java.lang.Math;
  * Implementation of a domain with a sparse-set
  */
 public class SparseSetDomain implements IntDomain {
-    private StateSparseWeightedSet domain;
+    private StateSparseSet domain;
+    /* the marginals, indexed by v - ofs. One restorable row per variable: it
+     * snapshots once per search level on first write, so a marginal read is a
+     * plain array access and rewriting a whole domain costs one trail entry
+     * instead of one StateDouble entry per value (the representation
+     * StateSparseWeightedSet used, with a weight object per sparse-set slot) */
+    private final StateDoubleArray marg;
     private int[] domainValues; // an array large enough to hold the domain
     private double[] beliefValues; // an auxiliary array as large as domainValues
     private HashMap<Integer, ArrayList<Double>> impactValues; //a map containing the registered impact of an assignement
@@ -66,7 +73,8 @@ public class SparseSetDomain implements IntDomain {
     private int nzExpNonZero;
 
     public SparseSetDomain(Solver cp, int min, int max) {
-        domain = new StateSparseWeightedSet(cp, max - min + 1, min);
+        domain = new StateSparseSet(cp.getStateManager(), max - min + 1, min);
+        marg = cp.getStateManager().makeStateDoubleArray(max - min + 1, cp.getBeliefRep().one()); // not normalized
         domainValues = new int[max - min + 1];
         beliefValues = new double[max - min + 1];
         ofs = min;
@@ -238,11 +246,15 @@ public class SparseSetDomain implements IntDomain {
 
     @Override
     public double marginal(int v) {
-        return domain.weight(v);
+        assert domain.contains(v);
+        return marg.read()[v - ofs];
     }
 
     @Override
-    public void setMarginal(int v, double m) { domain.setWeight(v, m); }
+    public void setMarginal(int v, double m) {
+        assert domain.contains(v);
+        marg.update()[v - ofs] = m;
+    }
 
     @Override
     public void resetMarginals() {
@@ -582,7 +594,20 @@ public class SparseSetDomain implements IntDomain {
 
     @Override
     public String toString() {
-        return domain.toString();
+        // the format StateSparseWeightedSet.toString printed
+        int[] vals = new int[domain.size()]; // not the shared scratch: toString may run inside a method using it
+        int s = domain.fillArray(vals);
+        StringBuilder b = new StringBuilder();
+        b.append("{");
+        for (int j = 0; j < s; j++) {
+            if (j > 0) b.append(", ");
+            b.append(vals[j]);
+            b.append("  <");
+            b.append(marg.read()[vals[j] - ofs]);
+            b.append('>');
+        }
+        b.append("}");
+        return b.toString();
     }
 
 }
