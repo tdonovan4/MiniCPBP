@@ -167,11 +167,13 @@ public class AllDifferentDC extends AbstractConstraint {
             int maxDim = Math.min(dim, AllDiffConfig.EXACT_MAX_DIM);
             if (AllDiffConfig.EXACT == AllDiffConfig.ExactRoutine.DP && maxDim >= 1)
                 dpWorkspace = new Permanent.DpWorkspace(Math.min(maxDim, 24));
-            minors = new double[dim][dim];
+            // the exact routines only run while nbVal <= EXACT_MAX_DIM, so they
+            // never index the buffer beyond maxDim x maxDim
+            minors = new double[maxDim][maxDim];
         }
         if (AllDiffConfig.APPROX == AllDiffConfig.ApproxRoutine.BP) {
             bp = new AssignmentBP(dim, dim);
-            if (minors == null) minors = new double[dim][dim];
+            if (minors == null || minors.length < dim) minors = new double[dim][dim];
         }
     }
 
