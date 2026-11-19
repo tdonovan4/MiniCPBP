@@ -196,8 +196,13 @@ public class SolveXCSPFZN {
 			nbFailCutoff = nbFailCutoff * decisionsVars.length;
 		}
 
-		Search search = null;
-		try {
+		boolean extractSolutionStr = checkSolution || (!Objects.equals(solFileStr, ""));
+		AtomicBoolean foundSolution = new AtomicBoolean(false);
+		List<String> solutionStrs = new ArrayList<>();
+		SolutionDistribution trueMarginals = new SolutionDistribution();
+
+		Supplier<Search> searchSupplier = () -> {
+			Search search = null;
 			switch (heuristic) {
 				case FFRV:
 					minicp.setMode(Solver.PropaMode.SP);
@@ -349,35 +354,37 @@ public class SolveXCSPFZN {
 					Log.info("unknown search strategy");
 					System.exit(1);
 			}
-		} catch (InconsistencyException ignored) {
-			// Do we consider this a pre init fail?
-			earlyReturnSummary.run();
-			return;
-		}
 
-		boolean extractSolutionStr = checkSolution || (!Objects.equals(solFileStr, ""));
-		AtomicBoolean foundSolution = new AtomicBoolean(false);
-		List<String> solutionStrs = new ArrayList<>();
-		SolutionDistribution trueMarginals = new SolutionDistribution();
-		search.onSolution(() -> {
-			foundSolution.set(true);
-			String solutionStr = frontend.getSolutionStr(extractSolutionStr);
-			if (enumerateSolutions) {
-				solutionStrs.add(solutionStr);
-				trueMarginals.addSolution(decisionsVars);
-			} else {
-				// No need to keep other solutions, only keep latest
-				solutionStrs.add(0, solutionStr);
-			}
-		});
+			search.onSolution(() -> {
+				foundSolution.set(true);
+				String solutionStr = frontend.getSolutionStr(extractSolutionStr);
+				if (enumerateSolutions) {
+					solutionStrs.add(solutionStr);
+					trueMarginals.addSolution(decisionsVars);
+				} else {
+					// No need to keep other solutions, only keep latest
+					solutionStrs.add(0, solutionStr);
+				}
+			});
+
+			return search;
+		};
 
 		SearchStatistics stats;
 		Predicate<SearchStatistics> limit;
 		Objective obj;
 
+		Search search = null;
 		switch (frontend.getGoal()) {
 			//find a solution that maximize the cost function
 			case MAX:
+				try {
+					search = searchSupplier.get();
+				} catch (InconsistencyException ignored) {
+					// Do we consider this a pre init fail?
+					earlyReturnSummary.run();
+					return;
+				}
 				limit = ss -> timeUp.passed();
 				obj = minicp.minimize(frontend.getObjectiveVar());
 				if(!restart) {
@@ -388,6 +395,13 @@ public class SolveXCSPFZN {
 				break;
 			//find a solution that minimize the cost function
 			case MIN:
+				try {
+					search = searchSupplier.get();
+				} catch (InconsistencyException ignored) {
+					// Do we consider this a pre init fail?
+					earlyReturnSummary.run();
+					return;
+				}
 				limit = ss -> timeUp.passed();
 				obj = minicp.minimize(frontend.getObjectiveVar());
 				if(!restart) {
@@ -397,6 +411,19 @@ public class SolveXCSPFZN {
 				}
 				break;
 			default:
+				long phase1Props = Long.getLong("minicpbp.combo.phase1Props", 0L);
+				// If using combo with the first phase, the second phase's heuristic is not yet created to avoid
+				// an additional root propagation
+				if (phase1Props <= 0) {
+					try {
+						search = searchSupplier.get();
+					} catch (InconsistencyException ignored) {
+						// Do we consider this a pre init fail?
+						earlyReturnSummary.run();
+						return;
+					}
+				}
+
 				limit = ss -> (timeUp.passed() || (!enumerateSolutions && foundSolution.get()));
 				//find a solution that satisfies all constraints without restart
 				if(!restart) {
@@ -412,7 +439,6 @@ public class SolveXCSPFZN {
 					// minicpbp.combo.phase1Props=N: before the configured search, min + plain DFS with BP off for N
 					// propagator executions (three-phase schedule); minicpbp.combo.bpWork=W: the configured search also
 					// ends after W work units (propagations + BP factor updates) of its own. Both deterministic.
-					long phase1Props = Long.getLong("minicpbp.combo.phase1Props", 0L);
 					long bpWork = Long.getLong("minicpbp.combo.bpWork", 0L);
 					boolean combo = switchFrac > 0 || failPerVar > 0 || phase1Props > 0 || bpWork > 0
 							|| Integer.getInteger("minicpbp.lds.maxPassBudget", 0) > 0;
@@ -440,6 +466,14 @@ public class SolveXCSPFZN {
 								if (c instanceof minicpbp.engine.core.AbstractConstraint)
 									((minicpbp.engine.core.AbstractConstraint) c).resetFailureCount();
 							}
+
+							try {
+								search = searchSupplier.get();
+							} catch (InconsistencyException ignored) {
+								// Do we consider this a pre init fail?
+								earlyReturnSummary.run();
+								return;
+							}
 						}
 					}
 					if (stats != null && (foundSolution.get() || stats.isCompleted() || limit.test(stats))) {
@@ -451,7 +485,8 @@ public class SolveXCSPFZN {
 						final minicpbp.search.Deadline switchUp = new minicpbp.search.Deadline(switchAt);
 						long w0 = minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates;
 						long work = bpWork > 0 ? bpWork : Long.MAX_VALUE;
-						stats = search.solve(limit.or(ss -> switchUp.passed() || ss.numberOfFailures() > failBudget
+                        assert search != null;
+                        stats = search.solve(limit.or(ss -> switchUp.passed() || ss.numberOfFailures() > failBudget
 								|| minicpbp.engine.core.MiniCP.propagations + minicpbp.util.BPStats.factorUpdates - w0 >= work));
 						switchUp.cancel();
 						long tSwitch = System.currentTimeMillis() - t0;
